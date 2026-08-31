@@ -1,0 +1,23 @@
+# Secrets. The example file is tracked; the real one never is.
+Secrets.xcconfig
+
+# macOS
+.DS_Store
+
+# Xcode build output
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Per-user Xcode state. xcshareddata stays tracked, so shared schemes are shared.
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+
+# Swift Package Manager. Package.resolved stays tracked so builds are reproducible.
+.build/
+.swiftpm/

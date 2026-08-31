@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Carries only the keys Xcode will not generate for us. GENERATE_INFOPLIST_FILE
+  stays on, so every INFOPLIST_KEY_ build setting is merged in on top of this.
+
+  INFOPLIST_KEY_TavilyAPIKey does not work: that mechanism only honours Info.plist
+  keys Xcode knows about, and silently drops the rest.
+
+  $(TAVILY_API_KEY) is substituted at build time from Secrets.xcconfig, which is
+  gitignored. The key itself never appears in a tracked file.
+-->
+<plist version="1.0">
+<dict>
+	<key>TavilyAPIKey</key>
+	<string>$(TAVILY_API_KEY)</string>
+</dict>
+</plist>

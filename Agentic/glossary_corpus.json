@@ -1,0 +1,505 @@
+[
+ {
+  "entry_id": "g_acidity",
+  "term": "acidity",
+  "aliases": [
+   "brightness",
+   "liveliness",
+   "structure"
+  ],
+  "category": "sensory",
+  "definition": "The bright, tangy, sparkling quality of a coffee. In coffee tasting acidity is a positive attribute, not a fault and not the same as sourness. High acidity is associated with high-altitude growing regions, washed processing, and lighter roasts. Common sub-descriptors are citric, malic (apple-like), tartaric (grape-like), and phosphoric. Contrast with sourness, which usually signals underextraction or a defect.",
+  "card_text": "acidity (also: brightness, liveliness, structure)\nCategory: sensory.\n\nThe bright, tangy, sparkling quality of a coffee. In coffee tasting acidity is a positive attribute, not a fault and not the same as sourness. High acidity is associated with high-altitude growing regions, washed processing, and lighter roasts. Common sub-descriptors are citric, malic (apple-like), tartaric (grape-like), and phosphoric. Contrast with sourness, which usually signals underextraction or a defect."
+ },
+ {
+  "entry_id": "g_body",
+  "term": "body",
+  "aliases": [
+   "mouthfeel",
+   "texture",
+   "weight"
+  ],
+  "category": "sensory",
+  "definition": "The tactile weight and viscosity of the coffee in the mouth, ranging from thin and tea-like to syrupy and heavy. Body is a texture, not a flavor, and it is independent of brew strength. Natural and wet-hulled processing and darker roasts tend to increase body; washed processing and light roasts often produce lighter body with more clarity.",
+  "card_text": "body (also: mouthfeel, texture, weight)\nCategory: sensory.\n\nThe tactile weight and viscosity of the coffee in the mouth, ranging from thin and tea-like to syrupy and heavy. Body is a texture, not a flavor, and it is independent of brew strength. Natural and wet-hulled processing and darker roasts tend to increase body; washed processing and light roasts often produce lighter body with more clarity."
+ },
+ {
+  "entry_id": "g_aftertaste",
+  "term": "aftertaste",
+  "aliases": [
+   "finish",
+   "length"
+  ],
+  "category": "sensory",
+  "definition": "The flavor and sensation that remains after the coffee is swallowed. Evaluated on both length (how long it persists) and quality (whether it stays pleasant or turns harsh, papery, or bitter). A long, sweet aftertaste is a hallmark of high-scoring coffee.",
+  "card_text": "aftertaste (also: finish, length)\nCategory: sensory.\n\nThe flavor and sensation that remains after the coffee is swallowed. Evaluated on both length (how long it persists) and quality (whether it stays pleasant or turns harsh, papery, or bitter). A long, sweet aftertaste is a hallmark of high-scoring coffee."
+ },
+ {
+  "entry_id": "g_aroma",
+  "term": "aroma",
+  "aliases": [
+   "fragrance",
+   "nose"
+  ],
+  "category": "sensory",
+  "definition": "The smell of the brewed coffee. In formal cupping, fragrance refers to the smell of the dry grounds and aroma to the smell after hot water is added. Much of what people call flavor is actually aroma perceived retronasally.",
+  "card_text": "aroma (also: fragrance, nose)\nCategory: sensory.\n\nThe smell of the brewed coffee. In formal cupping, fragrance refers to the smell of the dry grounds and aroma to the smell after hot water is added. Much of what people call flavor is actually aroma perceived retronasally."
+ },
+ {
+  "entry_id": "g_balance",
+  "term": "balance",
+  "aliases": [
+   "harmony"
+  ],
+  "category": "sensory",
+  "definition": "How well a coffee's attributes fit together rather than competing. A balanced coffee has no single element that dominates unpleasantly. A coffee can have intense acidity and still be balanced if sweetness and body support it.",
+  "card_text": "balance (also: harmony)\nCategory: sensory.\n\nHow well a coffee's attributes fit together rather than competing. A balanced coffee has no single element that dominates unpleasantly. A coffee can have intense acidity and still be balanced if sweetness and body support it."
+ },
+ {
+  "entry_id": "g_sweetness",
+  "term": "sweetness",
+  "aliases": [
+   "sugar browning"
+  ],
+  "category": "sensory",
+  "definition": "Perceived sweetness in the cup, arising from sugars and sugar-browning compounds developed during roasting rather than from added sugar. Sweetness offsets bitterness and acidity, and is one of the strongest predictors of a coffee being described as smooth or easy to drink.",
+  "card_text": "sweetness (also: sugar browning)\nCategory: sensory.\n\nPerceived sweetness in the cup, arising from sugars and sugar-browning compounds developed during roasting rather than from added sugar. Sweetness offsets bitterness and acidity, and is one of the strongest predictors of a coffee being described as smooth or easy to drink."
+ },
+ {
+  "entry_id": "g_clean_cup",
+  "term": "clean cup",
+  "aliases": [
+   "clarity",
+   "transparency"
+  ],
+  "category": "sensory",
+  "definition": "The absence of interfering off-flavors from first sip through aftertaste. A clean cup lets origin character show through clearly. Cleanliness is closely associated with careful washed processing and good defect sorting.",
+  "card_text": "clean cup (also: clarity, transparency)\nCategory: sensory.\n\nThe absence of interfering off-flavors from first sip through aftertaste. A clean cup lets origin character show through clearly. Cleanliness is closely associated with careful washed processing and good defect sorting."
+ },
+ {
+  "entry_id": "g_uniformity",
+  "term": "uniformity",
+  "aliases": [],
+  "category": "sensory",
+  "definition": "Consistency of flavor across multiple cups of the same sample in a cupping. Low uniformity means some cups taste noticeably different, usually indicating inconsistent processing or defective beans in the lot.",
+  "card_text": "uniformity\nCategory: sensory.\n\nConsistency of flavor across multiple cups of the same sample in a cupping. Low uniformity means some cups taste noticeably different, usually indicating inconsistent processing or defective beans in the lot."
+ },
+ {
+  "entry_id": "g_bitterness",
+  "term": "bitterness",
+  "aliases": [
+   "bitter"
+  ],
+  "category": "sensory",
+  "definition": "A basic taste that increases with roast level and with overextraction during brewing. Some bitterness is normal and even desirable in espresso and darker roasts. Excessive bitterness usually points to dark roasting, too-fine grind, too-long contact time, or water that is too hot.",
+  "card_text": "bitterness (also: bitter)\nCategory: sensory.\n\nA basic taste that increases with roast level and with overextraction during brewing. Some bitterness is normal and even desirable in espresso and darker roasts. Excessive bitterness usually points to dark roasting, too-fine grind, too-long contact time, or water that is too hot."
+ },
+ {
+  "entry_id": "g_sourness",
+  "term": "sourness",
+  "aliases": [
+   "sour",
+   "underextraction"
+  ],
+  "category": "defect",
+  "definition": "An unpleasant sharp taste that is distinct from acidity. Sourness generally indicates underextraction, underdeveloped roasting, or fermentation defects. When a drinker says they dislike sour coffee they usually mean this, not the bright acidity that cuppers value.",
+  "card_text": "sourness (also: sour, underextraction)\nCategory: defect.\n\nAn unpleasant sharp taste that is distinct from acidity. Sourness generally indicates underextraction, underdeveloped roasting, or fermentation defects. When a drinker says they dislike sour coffee they usually mean this, not the bright acidity that cuppers value."
+ },
+ {
+  "entry_id": "g_astringency",
+  "term": "astringency",
+  "aliases": [
+   "drying",
+   "puckering"
+  ],
+  "category": "defect",
+  "definition": "A drying, puckering sensation on the tongue and cheeks, similar to strong black tea or unripe fruit. It is a tactile sensation rather than a taste, and it usually indicates overextraction or underripe cherries.",
+  "card_text": "astringency (also: drying, puckering)\nCategory: defect.\n\nA drying, puckering sensation on the tongue and cheeks, similar to strong black tea or unripe fruit. It is a tactile sensation rather than a taste, and it usually indicates overextraction or underripe cherries."
+ },
+ {
+  "entry_id": "g_baggy",
+  "term": "baggy",
+  "aliases": [],
+  "category": "defect",
+  "definition": "A stale, flat, slightly papery character caused by prolonged or poor storage of green coffee. Common in older crop coffee.",
+  "card_text": "baggy\nCategory: defect.\n\nA stale, flat, slightly papery character caused by prolonged or poor storage of green coffee. Common in older crop coffee."
+ },
+ {
+  "entry_id": "g_ferment",
+  "term": "ferment",
+  "aliases": [
+   "fermented",
+   "overfermented"
+  ],
+  "category": "defect",
+  "definition": "An off-flavor from uncontrolled fermentation during processing, tasting sour, boozy, rotten, or onion-like. Note that deliberate controlled fermentation is a modern processing technique producing desirable fruity intensity, so fermented character is only a defect when unintended or excessive.",
+  "card_text": "ferment (also: fermented, overfermented)\nCategory: defect.\n\nAn off-flavor from uncontrolled fermentation during processing, tasting sour, boozy, rotten, or onion-like. Note that deliberate controlled fermentation is a modern processing technique producing desirable fruity intensity, so fermented character is only a defect when unintended or excessive."
+ },
+ {
+  "entry_id": "g_phenolic",
+  "term": "phenolic",
+  "aliases": [
+   "medicinal"
+  ],
+  "category": "defect",
+  "definition": "A harsh medicinal or chemical off-flavor, sometimes described as iodine or band-aid like. Considered a serious defect.",
+  "card_text": "phenolic (also: medicinal)\nCategory: defect.\n\nA harsh medicinal or chemical off-flavor, sometimes described as iodine or band-aid like. Considered a serious defect."
+ },
+ {
+  "entry_id": "g_washed_process",
+  "term": "washed process",
+  "aliases": [
+   "wet process",
+   "fully washed"
+  ],
+  "category": "processing",
+  "definition": "The coffee fruit and mucilage are removed before drying, usually with fermentation and washing tanks. Produces a clean, transparent cup with higher perceived acidity and clearer origin character. This is the default processing method in most specialty-focused origins such as Colombia, Kenya, and Central America.",
+  "card_text": "washed process (also: wet process, fully washed)\nCategory: processing.\n\nThe coffee fruit and mucilage are removed before drying, usually with fermentation and washing tanks. Produces a clean, transparent cup with higher perceived acidity and clearer origin character. This is the default processing method in most specialty-focused origins such as Colombia, Kenya, and Central America."
+ },
+ {
+  "entry_id": "g_natural_process",
+  "term": "natural process",
+  "aliases": [
+   "dry process",
+   "naturals"
+  ],
+  "category": "processing",
+  "definition": "The whole coffee cherry is dried with the fruit still attached to the seed. Sugars and aromatics from the fruit migrate into the bean, producing pronounced fruity and berry-like flavors, heavier body, and sometimes boozy or fermented notes. Requires careful drying, as the defect risk is higher than in washed processing. Common in Ethiopia and Brazil.",
+  "card_text": "natural process (also: dry process, naturals)\nCategory: processing.\n\nThe whole coffee cherry is dried with the fruit still attached to the seed. Sugars and aromatics from the fruit migrate into the bean, producing pronounced fruity and berry-like flavors, heavier body, and sometimes boozy or fermented notes. Requires careful drying, as the defect risk is higher than in washed processing. Common in Ethiopia and Brazil."
+ },
+ {
+  "entry_id": "g_honey_process",
+  "term": "honey process",
+  "aliases": [
+   "pulped natural",
+   "semi-washed"
+  ],
+  "category": "processing",
+  "definition": "The skin is removed but some or all of the sticky mucilage is left on the bean during drying. Sits between washed and natural in character: sweeter and rounder than washed, cleaner and less wild than natural. Often labeled by how much mucilage was retained, as in yellow, red, or black honey.",
+  "card_text": "honey process (also: pulped natural, semi-washed)\nCategory: processing.\n\nThe skin is removed but some or all of the sticky mucilage is left on the bean during drying. Sits between washed and natural in character: sweeter and rounder than washed, cleaner and less wild than natural. Often labeled by how much mucilage was retained, as in yellow, red, or black honey."
+ },
+ {
+  "entry_id": "g_wet-hulled",
+  "term": "wet-hulled",
+  "aliases": [
+   "giling basah",
+   "semi-washed indonesian"
+  ],
+  "category": "processing",
+  "definition": "An Indonesian method where the parchment is removed at a high moisture content. Produces the characteristic Sumatran profile: heavy body, low acidity, and earthy, herbal, cedary flavors. This is the main reason Sumatra tastes distinct from washed coffees of similar altitude.",
+  "card_text": "wet-hulled (also: giling basah, semi-washed indonesian)\nCategory: processing.\n\nAn Indonesian method where the parchment is removed at a high moisture content. Produces the characteristic Sumatran profile: heavy body, low acidity, and earthy, herbal, cedary flavors. This is the main reason Sumatra tastes distinct from washed coffees of similar altitude."
+ },
+ {
+  "entry_id": "g_anaerobic_fermentation",
+  "term": "anaerobic fermentation",
+  "aliases": [
+   "carbonic maceration",
+   "co-ferment"
+  ],
+  "category": "processing",
+  "definition": "Cherries or depulped beans are fermented in sealed oxygen-free tanks, sometimes with added cultures or fruit. Produces intense, unusual flavors such as cinnamon, tropical fruit, wine, or fruit candy. Polarizing: some drinkers find the results exciting, others find them artificial or overwhelming.",
+  "card_text": "anaerobic fermentation (also: carbonic maceration, co-ferment)\nCategory: processing.\n\nCherries or depulped beans are fermented in sealed oxygen-free tanks, sometimes with added cultures or fruit. Produces intense, unusual flavors such as cinnamon, tropical fruit, wine, or fruit candy. Polarizing: some drinkers find the results exciting, others find them artificial or overwhelming."
+ },
+ {
+  "entry_id": "g_light_roast",
+  "term": "light roast",
+  "aliases": [
+   "cinnamon roast",
+   "city roast"
+  ],
+  "category": "roast",
+  "definition": "A roast stopped shortly after first crack. Preserves the most origin character: high acidity, floral and fruity notes, lighter body, and little or no roast flavor. Best suited to high-quality, distinctive coffees where the point is to taste the origin.",
+  "card_text": "light roast (also: cinnamon roast, city roast)\nCategory: roast.\n\nA roast stopped shortly after first crack. Preserves the most origin character: high acidity, floral and fruity notes, lighter body, and little or no roast flavor. Best suited to high-quality, distinctive coffees where the point is to taste the origin."
+ },
+ {
+  "entry_id": "g_medium_roast",
+  "term": "medium roast",
+  "aliases": [
+   "city plus",
+   "full city"
+  ],
+  "category": "roast",
+  "definition": "A roast taken further than light but stopped before second crack. Acidity softens, sweetness and caramel or nutty notes come forward, body increases. The most common commercial roast level and generally the most forgiving to brew.",
+  "card_text": "medium roast (also: city plus, full city)\nCategory: roast.\n\nA roast taken further than light but stopped before second crack. Acidity softens, sweetness and caramel or nutty notes come forward, body increases. The most common commercial roast level and generally the most forgiving to brew."
+ },
+ {
+  "entry_id": "g_dark_roast",
+  "term": "dark roast",
+  "aliases": [
+   "french roast",
+   "italian roast",
+   "very dark"
+  ],
+  "category": "roast",
+  "definition": "A roast taken into or past second crack. Roast character dominates over origin character: bittersweet, smoky, carbony, low acidity, heavy body, often with visible oil on the bean surface. Note that dark roasting does not meaningfully increase caffeine; it primarily changes flavor.",
+  "card_text": "dark roast (also: french roast, italian roast, very dark)\nCategory: roast.\n\nA roast taken into or past second crack. Roast character dominates over origin character: bittersweet, smoky, carbony, low acidity, heavy body, often with visible oil on the bean surface. Note that dark roasting does not meaningfully increase caffeine; it primarily changes flavor."
+ },
+ {
+  "entry_id": "g_agtron",
+  "term": "agtron",
+  "aliases": [
+   "roast color",
+   "color score"
+  ],
+  "category": "measurement",
+  "definition": "A numeric measurement of roast color read by a spectrophotometer, where higher numbers mean lighter roasts. Often reported as two numbers for whole bean and ground coffee. Used to describe roast level objectively rather than by taste.",
+  "card_text": "agtron (also: roast color, color score)\nCategory: measurement.\n\nA numeric measurement of roast color read by a spectrophotometer, where higher numbers mean lighter roasts. Often reported as two numbers for whole bean and ground coffee. Used to describe roast level objectively rather than by taste."
+ },
+ {
+  "entry_id": "g_first_crack",
+  "term": "first crack",
+  "aliases": [],
+  "category": "roast",
+  "definition": "An audible cracking during roasting, caused by moisture and gas escaping the bean as it expands. Marks the beginning of the range in which coffee is drinkable. Light roasts are finished just after first crack.",
+  "card_text": "first crack\nCategory: roast.\n\nAn audible cracking during roasting, caused by moisture and gas escaping the bean as it expands. Marks the beginning of the range in which coffee is drinkable. Light roasts are finished just after first crack."
+ },
+ {
+  "entry_id": "g_second_crack",
+  "term": "second crack",
+  "aliases": [],
+  "category": "roast",
+  "definition": "A second, quieter cracking later in the roast, caused by the bean's cellular structure fracturing as oils migrate to the surface. Roasting into second crack produces dark roast character.",
+  "card_text": "second crack\nCategory: roast.\n\nA second, quieter cracking later in the roast, caused by the bean's cellular structure fracturing as oils migrate to the surface. Roasting into second crack produces dark roast character."
+ },
+ {
+  "entry_id": "g_arabica",
+  "term": "arabica",
+  "aliases": [
+   "coffea arabica"
+  ],
+  "category": "botany",
+  "definition": "The species that accounts for nearly all specialty coffee. More acidic, aromatic, and complex than robusta, with roughly half the caffeine, but harder to grow and more disease-susceptible. Labeling a coffee as 100 percent Arabica is a baseline claim, not a quality claim, since almost all specialty coffee is Arabica.",
+  "card_text": "arabica (also: coffea arabica)\nCategory: botany.\n\nThe species that accounts for nearly all specialty coffee. More acidic, aromatic, and complex than robusta, with roughly half the caffeine, but harder to grow and more disease-susceptible. Labeling a coffee as 100 percent Arabica is a baseline claim, not a quality claim, since almost all specialty coffee is Arabica."
+ },
+ {
+  "entry_id": "g_robusta",
+  "term": "robusta",
+  "aliases": [
+   "coffea canephora",
+   "fine robusta"
+  ],
+  "category": "botany",
+  "definition": "A hardier species with about twice the caffeine of Arabica, heavier body, lower acidity, and characteristically rubbery, grainy, or woody flavors. Widely used in instant coffee and in Italian espresso blends for crema and body. Fine robusta is a recognized quality category with its own grading standards, so robusta is not automatically low quality.",
+  "card_text": "robusta (also: coffea canephora, fine robusta)\nCategory: botany.\n\nA hardier species with about twice the caffeine of Arabica, heavier body, lower acidity, and characteristically rubbery, grainy, or woody flavors. Widely used in instant coffee and in Italian espresso blends for crema and body. Fine robusta is a recognized quality category with its own grading standards, so robusta is not automatically low quality."
+ },
+ {
+  "entry_id": "g_gesha",
+  "term": "gesha",
+  "aliases": [
+   "geisha"
+  ],
+  "category": "variety",
+  "definition": "An Arabica variety originally from Ethiopia, made famous by Hacienda La Esmeralda in Panama. Known for an intensely floral, tea-like, jasmine and bergamot profile with delicate body. Low-yielding and expensive, and often the most costly coffee on a roaster's menu.",
+  "card_text": "gesha (also: geisha)\nCategory: variety.\n\nAn Arabica variety originally from Ethiopia, made famous by Hacienda La Esmeralda in Panama. Known for an intensely floral, tea-like, jasmine and bergamot profile with delicate body. Low-yielding and expensive, and often the most costly coffee on a roaster's menu."
+ },
+ {
+  "entry_id": "g_bourbon",
+  "term": "bourbon",
+  "aliases": [],
+  "category": "variety",
+  "definition": "A classic Arabica variety known for pronounced sweetness and balanced acidity. A parent of many modern cultivars and widely planted in Latin America and East Africa.",
+  "card_text": "bourbon\nCategory: variety.\n\nA classic Arabica variety known for pronounced sweetness and balanced acidity. A parent of many modern cultivars and widely planted in Latin America and East Africa."
+ },
+ {
+  "entry_id": "g_typica",
+  "term": "typica",
+  "aliases": [],
+  "category": "variety",
+  "definition": "One of the oldest cultivated Arabica varieties and the genetic ancestor of many others. Known for clean, sweet, well-balanced cups but low yields.",
+  "card_text": "typica\nCategory: variety.\n\nOne of the oldest cultivated Arabica varieties and the genetic ancestor of many others. Known for clean, sweet, well-balanced cups but low yields."
+ },
+ {
+  "entry_id": "g_sl28",
+  "term": "sl28",
+  "aliases": [
+   "sl34"
+  ],
+  "category": "variety",
+  "definition": "Kenyan-selected varieties known for intense blackcurrant and citrus acidity and remarkable structure. A major reason Kenyan coffee tastes the way it does.",
+  "card_text": "sl28 (also: sl34)\nCategory: variety.\n\nKenyan-selected varieties known for intense blackcurrant and citrus acidity and remarkable structure. A major reason Kenyan coffee tastes the way it does."
+ },
+ {
+  "entry_id": "g_caturra",
+  "term": "caturra",
+  "aliases": [
+   "catuai"
+  ],
+  "category": "variety",
+  "definition": "Compact, higher-yielding Bourbon-derived varieties widely planted in Latin America. Clean and bright, generally with less complexity than Gesha or Bourbon at similar altitude.",
+  "card_text": "caturra (also: catuai)\nCategory: variety.\n\nCompact, higher-yielding Bourbon-derived varieties widely planted in Latin America. Clean and bright, generally with less complexity than Gesha or Bourbon at similar altitude."
+ },
+ {
+  "entry_id": "g_catimor",
+  "term": "catimor",
+  "aliases": [
+   "sarchimor"
+  ],
+  "category": "variety",
+  "definition": "Disease-resistant hybrids containing robusta genetics, valued by farmers for leaf rust resistance and yield. Cup quality is typically flatter and less sweet than pure Arabica varieties, though newer selections have improved.",
+  "card_text": "catimor (also: sarchimor)\nCategory: variety.\n\nDisease-resistant hybrids containing robusta genetics, valued by farmers for leaf rust resistance and yield. Cup quality is typically flatter and less sweet than pure Arabica varieties, though newer selections have improved."
+ },
+ {
+  "entry_id": "g_terroir",
+  "term": "terroir",
+  "aliases": [
+   "altitude",
+   "growing region"
+  ],
+  "category": "origin",
+  "definition": "The combination of altitude, soil, climate, and shade that shapes how coffee develops in a given place. Higher altitude generally means slower cherry maturation, denser beans, and greater acidity and complexity. Altitude is often reported in meters above sea level, with 1,500 metres and above considered high-grown.",
+  "card_text": "terroir (also: altitude, growing region)\nCategory: origin.\n\nThe combination of altitude, soil, climate, and shade that shapes how coffee develops in a given place. Higher altitude generally means slower cherry maturation, denser beans, and greater acidity and complexity. Altitude is often reported in meters above sea level, with 1,500 metres and above considered high-grown."
+ },
+ {
+  "entry_id": "g_single_origin",
+  "term": "single origin",
+  "aliases": [
+   "single estate",
+   "microlot"
+  ],
+  "category": "origin",
+  "definition": "Coffee from one country, region, farm, or lot rather than a blend. Single origin coffees are chosen to express distinctive place-specific character. A microlot is a small, separately processed batch, usually the highest-quality selection from a farm.",
+  "card_text": "single origin (also: single estate, microlot)\nCategory: origin.\n\nCoffee from one country, region, farm, or lot rather than a blend. Single origin coffees are chosen to express distinctive place-specific character. A microlot is a small, separately processed batch, usually the highest-quality selection from a farm."
+ },
+ {
+  "entry_id": "g_blend",
+  "term": "blend",
+  "aliases": [
+   "house blend",
+   "espresso blend"
+  ],
+  "category": "origin",
+  "definition": "Coffee combining beans from multiple origins or lots, built for consistency, balance, or a specific purpose such as espresso or milk drinks. Blending is a craft decision, not a quality shortcut, though it does obscure single-origin character.",
+  "card_text": "blend (also: house blend, espresso blend)\nCategory: origin.\n\nCoffee combining beans from multiple origins or lots, built for consistency, balance, or a specific purpose such as espresso or milk drinks. Blending is a craft decision, not a quality shortcut, though it does obscure single-origin character."
+ },
+ {
+  "entry_id": "g_cupping",
+  "term": "cupping",
+  "aliases": [
+   "cup",
+   "cupping protocol"
+  ],
+  "category": "evaluation",
+  "definition": "The standardized method for evaluating coffee: coarse ground coffee is steeped in hot water, the crust is broken and aromas assessed, then the coffee is slurped from a spoon and scored across defined attributes. Cupping exists to make evaluations comparable between different tasters and places.",
+  "card_text": "cupping (also: cup, cupping protocol)\nCategory: evaluation.\n\nThe standardized method for evaluating coffee: coarse ground coffee is steeped in hot water, the crust is broken and aromas assessed, then the coffee is slurped from a spoon and scored across defined attributes. Cupping exists to make evaluations comparable between different tasters and places."
+ },
+ {
+  "entry_id": "g_cupping_score",
+  "term": "cupping score",
+  "aliases": [
+   "total cup points",
+   "sca score"
+  ],
+  "category": "evaluation",
+  "definition": "A score out of 100 assigned during formal cupping. Under the widely used 2004 SCA form, scores below 80 are commodity grade, 80 to 84.99 specialty, 85 to 89.99 excellent, and 90 and above outstanding. Scores are relative to the panel and protocol used, so numbers from different sources are not strictly comparable.",
+  "card_text": "cupping score (also: total cup points, sca score)\nCategory: evaluation.\n\nA score out of 100 assigned during formal cupping. Under the widely used 2004 SCA form, scores below 80 are commodity grade, 80 to 84.99 specialty, 85 to 89.99 excellent, and 90 and above outstanding. Scores are relative to the panel and protocol used, so numbers from different sources are not strictly comparable."
+ },
+ {
+  "entry_id": "g_coffee_value_assessment",
+  "term": "coffee value assessment",
+  "aliases": [
+   "cva",
+   "descriptive assessment",
+   "affective assessment"
+  ],
+  "category": "evaluation",
+  "definition": "The SCA evaluation system adopted in 2024, superseding the 2004 cupping protocol. It separates descriptive assessment, which objectively records sensory attributes using check-all-that-apply descriptor lists and intensity scales, from affective assessment, which records the taster's impression of quality. The separation reflects standard practice in sensory science, where description and preference are treated as different measurements.",
+  "card_text": "coffee value assessment (also: cva, descriptive assessment, affective assessment)\nCategory: evaluation.\n\nThe SCA evaluation system adopted in 2024, superseding the 2004 cupping protocol. It separates descriptive assessment, which objectively records sensory attributes using check-all-that-apply descriptor lists and intensity scales, from affective assessment, which records the taster's impression of quality. The separation reflects standard practice in sensory science, where description and preference are treated as different measurements."
+ },
+ {
+  "entry_id": "g_flavor_wheel",
+  "term": "flavor wheel",
+  "aliases": [
+   "coffee taster's flavor wheel",
+   "sensory lexicon"
+  ],
+  "category": "evaluation",
+  "definition": "A circular chart of coffee flavor descriptors published by the SCA and redesigned in 2016 with World Coffee Research. It is read from the center outward, moving from broad categories such as fruity or nutty to specific descriptors such as blueberry or almond. It is built on the World Coffee Research Sensory Lexicon, which defines 110 attributes with physical reference standards.",
+  "card_text": "flavor wheel (also: coffee taster's flavor wheel, sensory lexicon)\nCategory: evaluation.\n\nA circular chart of coffee flavor descriptors published by the SCA and redesigned in 2016 with World Coffee Research. It is read from the center outward, moving from broad categories such as fruity or nutty to specific descriptors such as blueberry or almond. It is built on the World Coffee Research Sensory Lexicon, which defines 110 attributes with physical reference standards."
+ },
+ {
+  "entry_id": "g_q_grader",
+  "term": "q grader",
+  "aliases": [
+   "licensed q grader"
+  ],
+  "category": "evaluation",
+  "definition": "A person certified by the Coffee Quality Institute to score coffee against a defined standard. Certification requires passing a battery of sensory and calibration exams and must be renewed periodically.",
+  "card_text": "q grader (also: licensed q grader)\nCategory: evaluation.\n\nA person certified by the Coffee Quality Institute to score coffee against a defined standard. Certification requires passing a battery of sensory and calibration exams and must be renewed periodically."
+ },
+ {
+  "entry_id": "g_extraction",
+  "term": "extraction",
+  "aliases": [
+   "overextraction",
+   "underextraction"
+  ],
+  "category": "brewing",
+  "definition": "How much soluble material is dissolved out of the grounds during brewing. Underextraction tastes sour, thin, and salty; overextraction tastes bitter, hollow, and astringent. Extraction is controlled mainly through grind size, contact time, water temperature, and agitation.",
+  "card_text": "extraction (also: overextraction, underextraction)\nCategory: brewing.\n\nHow much soluble material is dissolved out of the grounds during brewing. Underextraction tastes sour, thin, and salty; overextraction tastes bitter, hollow, and astringent. Extraction is controlled mainly through grind size, contact time, water temperature, and agitation."
+ },
+ {
+  "entry_id": "g_strength",
+  "term": "strength",
+  "aliases": [
+   "concentration",
+   "tds"
+  ],
+  "category": "brewing",
+  "definition": "The concentration of dissolved coffee solids in the finished beverage, measured as total dissolved solids. Strength is distinct from extraction and from body, and it is also distinct from caffeine content. A coffee can be strong and underextracted at the same time.",
+  "card_text": "strength (also: concentration, tds)\nCategory: brewing.\n\nThe concentration of dissolved coffee solids in the finished beverage, measured as total dissolved solids. Strength is distinct from extraction and from body, and it is also distinct from caffeine content. A coffee can be strong and underextracted at the same time."
+ },
+ {
+  "entry_id": "g_espresso",
+  "term": "espresso",
+  "aliases": [
+   "shot",
+   "crema"
+  ],
+  "category": "brewing",
+  "definition": "A concentrated brew produced by forcing hot water through finely ground, compacted coffee under high pressure. Concentration amplifies both sweetness and defects, and coffees are often roasted and evaluated specifically for espresso rather than filter.",
+  "card_text": "espresso (also: shot, crema)\nCategory: brewing.\n\nA concentrated brew produced by forcing hot water through finely ground, compacted coffee under high pressure. Concentration amplifies both sweetness and defects, and coffees are often roasted and evaluated specifically for espresso rather than filter."
+ },
+ {
+  "entry_id": "g_filter_brewing",
+  "term": "filter brewing",
+  "aliases": [
+   "pour over",
+   "drip"
+  ],
+  "category": "brewing",
+  "definition": "Brewing where water passes through a bed of coffee and a paper or metal filter. Produces a lighter body and greater clarity than immersion or espresso, and is the usual way to evaluate delicate, high-acidity single origins.",
+  "card_text": "filter brewing (also: pour over, drip)\nCategory: brewing.\n\nBrewing where water passes through a bed of coffee and a paper or metal filter. Produces a lighter body and greater clarity than immersion or espresso, and is the usual way to evaluate delicate, high-acidity single origins."
+ },
+ {
+  "entry_id": "g_immersion_brewing",
+  "term": "immersion brewing",
+  "aliases": [
+   "french press",
+   "cupping",
+   "clever"
+  ],
+  "category": "brewing",
+  "definition": "Brewing where grounds sit fully submerged in water for a set time before separation. Produces a heavier body and rounder profile, especially with a metal filter that lets oils and fines through.",
+  "card_text": "immersion brewing (also: french press, cupping, clever)\nCategory: brewing.\n\nBrewing where grounds sit fully submerged in water for a set time before separation. Produces a heavier body and rounder profile, especially with a metal filter that lets oils and fines through."
+ },
+ {
+  "entry_id": "g_caffeine",
+  "term": "caffeine",
+  "aliases": [],
+  "category": "chemistry",
+  "definition": "A stimulant present in higher concentration in robusta than in Arabica. Roast level has only a minor effect on caffeine content, so dark roast is not meaningfully stronger in caffeine than light roast. Perceived strength in a cup comes mostly from brew concentration, not caffeine.",
+  "card_text": "caffeine\nCategory: chemistry.\n\nA stimulant present in higher concentration in robusta than in Arabica. Roast level has only a minor effect on caffeine content, so dark roast is not meaningfully stronger in caffeine than light roast. Perceived strength in a cup comes mostly from brew concentration, not caffeine."
+ },
+ {
+  "entry_id": "g_freshness",
+  "term": "freshness",
+  "aliases": [
+   "roast date",
+   "degassing",
+   "stale"
+  ],
+  "category": "storage",
+  "definition": "Roasted coffee releases carbon dioxide and loses aromatics over time. Most coffees are best from a few days to about a month after roasting, with espresso often needing a longer rest to degas. Roast date matters far more to cup quality than roast level, and coffee should be stored airtight, cool, and away from light.",
+  "card_text": "freshness (also: roast date, degassing, stale)\nCategory: storage.\n\nRoasted coffee releases carbon dioxide and loses aromatics over time. Most coffees are best from a few days to about a month after roasting, with espresso often needing a longer rest to degas. Roast date matters far more to cup quality than roast level, and coffee should be stored airtight, cool, and away from light."
+ }
+]

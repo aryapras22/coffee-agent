@@ -1,0 +1,505 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		16041ACC41DAD657099C86D0 /* WebSearchToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70A5EB0E8B14FE49CB170AC5 /* WebSearchToolTests.swift */; };
+		2F58E8FD29FB4F22F83C1590 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E570D80B3BF2E692D53DC4DA /* Foundation.framework */; };
+		42BF22233045919000EF0361 /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 42BF22223045919000EF0361 /* .gitignore */; };
+		D57CFE71B3D16853FA1E7BA0 /* NearbyPlacesToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF3C782B85BD9B94D2E64FDF /* NearbyPlacesToolTests.swift */; };
+		E5AC6247551EE763F7C20279 /* ChatManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 972434CB16E5B6DD003257BE /* ChatManagerTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		48C4834CF9D541951BF1FC61 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 424109DA303BFE2B00700E4F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 424109E1303BFE2B00700E4F;
+			remoteInfo = Agentic;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		424109E2303BFE2B00700E4F /* Agentic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agentic.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		42BF22223045919000EF0361 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		505B29D8CCAAD543293B669D /* AgenticTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgenticTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		6E378D3D43093F9977A585FD /* CoffeeAgentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CoffeeAgentTests.swift; path = AgenticTests/CoffeeAgentTests.swift; sourceTree = "<group>"; };
+		70A5EB0E8B14FE49CB170AC5 /* WebSearchToolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WebSearchToolTests.swift; path = AgenticTests/WebSearchToolTests.swift; sourceTree = "<group>"; };
+		972434CB16E5B6DD003257BE /* ChatManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ChatManagerTests.swift; path = AgenticTests/ChatManagerTests.swift; sourceTree = "<group>"; };
+		A11CF6900000000000000001 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
+		DF3C782B85BD9B94D2E64FDF /* NearbyPlacesToolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NearbyPlacesToolTests.swift; path = AgenticTests/NearbyPlacesToolTests.swift; sourceTree = "<group>"; };
+		E570D80B3BF2E692D53DC4DA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		424109E4303BFE2B00700E4F /* Agentic */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Agentic;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		41B1F585A16F34D65CFA8084 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2F58E8FD29FB4F22F83C1590 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		424109DF303BFE2B00700E4F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		424109D9303BFE2B00700E4F = {
+			isa = PBXGroup;
+			children = (
+				424109E4303BFE2B00700E4F /* Agentic */,
+				424109E3303BFE2B00700E4F /* Products */,
+				C7F01DB71F2EA72C9F92305A /* Frameworks */,
+				667E05517051E5D30CCDC1B9 /* AgenticTests */,
+				A11CF6900000000000000001 /* Secrets.xcconfig */,
+				42BF22223045919000EF0361 /* .gitignore */,
+			);
+			sourceTree = "<group>";
+		};
+		424109E3303BFE2B00700E4F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				424109E2303BFE2B00700E4F /* Agentic.app */,
+				505B29D8CCAAD543293B669D /* AgenticTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		667E05517051E5D30CCDC1B9 /* AgenticTests */ = {
+			isa = PBXGroup;
+			children = (
+				70A5EB0E8B14FE49CB170AC5 /* WebSearchToolTests.swift */,
+				DF3C782B85BD9B94D2E64FDF /* NearbyPlacesToolTests.swift */,
+				6E378D3D43093F9977A585FD /* CoffeeAgentTests.swift */,
+				972434CB16E5B6DD003257BE /* ChatManagerTests.swift */,
+			);
+			name = AgenticTests;
+			sourceTree = "<group>";
+		};
+		C7F01DB71F2EA72C9F92305A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				D4A2B013680900429FE3DD18 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		D4A2B013680900429FE3DD18 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				E570D80B3BF2E692D53DC4DA /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		424109E1303BFE2B00700E4F /* Agentic */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 424109ED303BFE2B00700E4F /* Build configuration list for PBXNativeTarget "Agentic" */;
+			buildPhases = (
+				424109DE303BFE2B00700E4F /* Sources */,
+				424109DF303BFE2B00700E4F /* Frameworks */,
+				424109E0303BFE2B00700E4F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				424109E4303BFE2B00700E4F /* Agentic */,
+			);
+			name = Agentic;
+			productName = Agentic;
+			productReference = 424109E2303BFE2B00700E4F /* Agentic.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A8278578FE2E537DD64DAD01 /* AgenticTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E312C78708C7A8119C2B2EC3 /* Build configuration list for PBXNativeTarget "AgenticTests" */;
+			buildPhases = (
+				00C3B3F6D6F68E7D66497148 /* Sources */,
+				41B1F585A16F34D65CFA8084 /* Frameworks */,
+				026D3F3258A78492BF97A217 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CD76654C60CE85612912EFFA /* PBXTargetDependency */,
+			);
+			name = AgenticTests;
+			productName = AgenticTests;
+			productReference = 505B29D8CCAAD543293B669D /* AgenticTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		424109DA303BFE2B00700E4F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					424109E1303BFE2B00700E4F = {
+						CreatedOnToolsVersion = 26.6;
+					};
+				};
+			};
+			buildConfigurationList = 424109DD303BFE2B00700E4F /* Build configuration list for PBXProject "Agentic" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 424109D9303BFE2B00700E4F;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 424109E3303BFE2B00700E4F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				424109E1303BFE2B00700E4F /* Agentic */,
+				A8278578FE2E537DD64DAD01 /* AgenticTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		026D3F3258A78492BF97A217 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		424109E0303BFE2B00700E4F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				42BF22233045919000EF0361 /* .gitignore in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		00C3B3F6D6F68E7D66497148 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				16041ACC41DAD657099C86D0 /* WebSearchToolTests.swift in Sources */,
+				D57CFE71B3D16853FA1E7BA0 /* NearbyPlacesToolTests.swift in Sources */,
+				E5AC6247551EE763F7C20279 /* ChatManagerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		424109DE303BFE2B00700E4F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		CD76654C60CE85612912EFFA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Agentic;
+			target = 424109E1303BFE2B00700E4F /* Agentic */;
+			targetProxy = 48C4834CF9D541951BF1FC61 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		06AF97B88F481E39D8D3BFF6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8ZYJQ3TK5Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.caffeine-junkie.AgenticTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agentic.app/Agentic";
+			};
+			name = Debug;
+		};
+		424109EB303BFE2B00700E4F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A11CF6900000000000000001 /* Secrets.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 8ZYJQ3TK5Q;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		424109EC303BFE2B00700E4F /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A11CF6900000000000000001 /* Secrets.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 8ZYJQ3TK5Q;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		424109EE303BFE2B00700E4F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8ZYJQ3TK5Q;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Agentic-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Coffee Agent";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agentic uses your location to find cafes and coffee shops near you.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.caffeine-junkie.Agentic";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		424109EF303BFE2B00700E4F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8ZYJQ3TK5Q;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Agentic-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Coffee Agent";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agentic uses your location to find cafes and coffee shops near you.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.caffeine-junkie.Agentic";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		EFE1294DE50937BC130B34C7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8ZYJQ3TK5Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.caffeine-junkie.AgenticTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agentic.app/Agentic";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		424109DD303BFE2B00700E4F /* Build configuration list for PBXProject "Agentic" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				424109EB303BFE2B00700E4F /* Debug */,
+				424109EC303BFE2B00700E4F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		424109ED303BFE2B00700E4F /* Build configuration list for PBXNativeTarget "Agentic" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				424109EE303BFE2B00700E4F /* Debug */,
+				424109EF303BFE2B00700E4F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E312C78708C7A8119C2B2EC3 /* Build configuration list for PBXNativeTarget "AgenticTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EFE1294DE50937BC130B34C7 /* Release */,
+				06AF97B88F481E39D8D3BFF6 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 424109DA303BFE2B00700E4F /* Project object */;
+}
