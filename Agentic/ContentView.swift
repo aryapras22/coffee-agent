@@ -40,6 +40,7 @@ struct ContentView: View {
     /// running. Resolved after the live brew and the open review, so starting
     /// a brew replaces the setup panel with the timer rather than stacking.
     @State private var panel: Panel?
+    @State private var pendingBag: PendingBag?
     @FocusState private var isComposerFocused: Bool
 
     /// The two things that have to cover the screen: a camera, and a list you
@@ -53,6 +54,15 @@ struct ContentView: View {
 
     enum Panel {
         case brewSetup
+    }
+
+    /// A scanned or blank bag waiting to be checked. Held here rather than in
+    /// the scan sheet because the confirm step is drawn in the transcript, and
+    /// the sheet is gone by the time it appears.
+    struct PendingBag {
+        var draft: BagScanner.Draft
+        var ocrText: String?
+        var photo: UIImage?
     }
 
     var body: some View {
@@ -98,8 +108,8 @@ struct ContentView: View {
                 case .cupboard:
                     CupboardView(manager: cupboard)
                 case .scan:
-                    ScanFlowView(manager: cupboard) { saved in
-                        Task { await announce(saved, cupboard: cupboard) }
+                    ScanFlowView(manager: cupboard) { draft, ocrText, photo in
+                        pendingBag = PendingBag(draft: draft, ocrText: ocrText, photo: photo)
                     }
                 }
             }
@@ -267,6 +277,10 @@ struct ContentView: View {
                 panel = .brewSetup
             }
             Button("Scan a bag", systemImage: "camera") { open(.scan) }
+            Button("Add a bag by hand", systemImage: "square.and.pencil") {
+                Log.write(.ui, "opened a blank bag form in the thread")
+                pendingBag = PendingBag(draft: BagScanner.Draft())
+            }
             Button("My cupboard", systemImage: "archivebox") { open(.cupboard) }
         } label: {
             Image(systemName: "cup.and.saucer")
@@ -402,6 +416,23 @@ struct ContentView: View {
                         thinking(for: model)
                     }
 
+                    if let pending = pendingBag, let cupboard {
+                        BagConfirmCard(
+                            manager: cupboard,
+                            draft: pending.draft,
+                            ocrText: pending.ocrText,
+                            photo: pending.photo
+                        ) { saved in
+                            pendingBag = nil
+                            guard let saved else { return }
+                            Task { await announce(saved, cupboard: cupboard) }
+                        }
+                        // Identified by the draft it started from, so editing a
+                        // field does not rebuild the card and drop the keyboard.
+                        .id(Self.confirmID)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+                    }
+
                     // One anchor for every scroll, so the target does not move
                     // between the last message, the thinking row, and the steps
                     // arriving underneath it.
@@ -412,11 +443,13 @@ struct ContentView: View {
                 .padding(Theme.lg)
                 .animation(Theme.enter, value: model.displayMessages.count)
                 .animation(Theme.enter, value: model.liveSteps.count)
+                .animation(Theme.enter, value: pendingBag != nil)
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: model.displayMessages.count) { scrollToLatest(proxy) }
             .onChange(of: model.isResponding) { scrollToLatest(proxy) }
             .onChange(of: model.liveSteps.count) { scrollToLatest(proxy) }
+            .onChange(of: pendingBag != nil) { scrollToLatest(proxy) }
         }
     }
 
@@ -548,6 +581,7 @@ struct ContentView: View {
     }
 
     private static let bottomID = "bottom"
+    private static let confirmID = "confirm-bag"
     private static let gaugeWidth: CGFloat = 44
 }
 

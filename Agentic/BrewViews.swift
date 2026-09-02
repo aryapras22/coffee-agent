@@ -342,12 +342,17 @@ struct BrewSetupPanel: View {
                         .font(Theme.label)
                         .foregroundStyle(Theme.inkMuted)
                 } else {
-                    Picker("Bean", selection: $beanId) {
-                        Text("Not from my cupboard").tag(UUID?.none)
-                        ForEach(manager.beans) { Text($0.displayName).tag(UUID?.some($0.id)) }
+                    HStack {
+                        Text("Bean").font(Theme.label).foregroundStyle(Theme.inkMuted)
+                        Spacer(minLength: Theme.sm)
+                        Picker("Bean", selection: $beanId) {
+                            Text("Not from my cupboard").tag(UUID?.none)
+                            ForEach(manager.beans) { Text($0.displayName).tag(UUID?.some($0.id)) }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .tint(Theme.accent)
                     }
-                    .pickerStyle(.menu)
-                    .tint(Theme.accent)
                 }
 
                 if let bean {
@@ -368,14 +373,21 @@ struct BrewSetupPanel: View {
                         .background(Theme.paper, in: .rect(cornerRadius: 6))
                 }
 
+                // Labelled alongside: a menu picker outside a `Form` shows
+                // only its selected value, and "Medium-low" on its own does
+                // not say what it is the level of.
                 HStack(spacing: Theme.md) {
+                    Text("Pot").font(Theme.label).foregroundStyle(Theme.inkMuted)
                     Picker("Pot", selection: $potSizeCups) {
                         ForEach([1, 3, 6, 9, 12], id: \.self) { Text("\($0) cup").tag($0) }
                     }
+                    Spacer(minLength: 0)
+                    Text("Heat").font(Theme.label).foregroundStyle(Theme.inkMuted)
                     Picker("Heat", selection: $heatLevel) {
                         ForEach(HeatLevel.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                 }
+                .labelsHidden()
                 .pickerStyle(.menu)
                 .tint(Theme.accent)
                 .font(Theme.control)
@@ -564,13 +576,17 @@ struct BrewReviewPanel: View {
             }
 
             HStack(spacing: Theme.md) {
+                Text("Acidity").font(Theme.label).foregroundStyle(Theme.inkMuted)
                 Picker("Acidity", selection: $acidity) {
-                    ForEach(IntensityLevel.allCases, id: \.self) { Text("Acidity \($0.label)").tag($0) }
+                    ForEach(IntensityLevel.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
+                Spacer(minLength: 0)
+                Text("Body").font(Theme.label).foregroundStyle(Theme.inkMuted)
                 Picker("Body", selection: $perceivedBody) {
-                    ForEach(IntensityLevel.allCases, id: \.self) { Text("Body \($0.label)").tag($0) }
+                    ForEach(IntensityLevel.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
             }
+            .labelsHidden()
             .pickerStyle(.menu)
             .tint(Theme.accent)
             .font(Theme.control)
