@@ -391,6 +391,7 @@
 				INFOPLIST_FILE = "Agentic-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Coffee Agent";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agentic uses your location to find cafes and coffee shops near you.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Coffee Agent uses the camera to read the label on a coffee bag.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -426,6 +427,7 @@
 				INFOPLIST_FILE = "Agentic-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Coffee Agent";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agentic uses your location to find cafes and coffee shops near you.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Coffee Agent uses the camera to read the label on a coffee bag.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

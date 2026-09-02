@@ -14,6 +14,6 @@ struct AgenticApp: App {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: [ChatSession.self, ChatMessage.self])
+        .modelContainer(for: [ChatSession.self, ChatMessage.self, OwnedBean.self, TastingNote.self, BrewSession.self])
     }
 }

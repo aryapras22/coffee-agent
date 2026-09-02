@@ -32,13 +32,23 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: ChatManager?
+    @State private var cupboard: CupboardManager?
     @State private var path: [ChatSession] = []
+    @State private var sheet: Workbench?
     @FocusState private var isComposerFocused: Bool
 
+    /// The three things the agent cannot do for you: hold a camera, run a
+    /// live timer, and cover a card before you answer it.
+    enum Workbench: String, Identifiable {
+        case cupboard, brew, learn
+
+        var id: String { rawValue }
+    }
+
     private static let starters = [
-        "Which of my beans are fruity?",
-        "Anything from Ethiopia?",
-        "I want a dark roast",
+        "Recommend me a bean",
+        "What do I have?",
+        "My coffee tastes bitter",
     ]
 
     var body: some View {
@@ -68,10 +78,20 @@ struct ContentView: View {
             }
         }
         .task {
-            if model == nil {
-                model = try? ChatManager(context: modelContext, agent: CoffeeAgent())
+            if model == nil, let agent = try? CoffeeAgent() {
+                model = ChatManager(context: modelContext, agent: agent)
+                cupboard = CupboardManager(context: modelContext, cupboard: agent.cupboard)
             }
             await model?.prepareIndex()
+        }
+        .sheet(item: $sheet) { destination in
+            if let cupboard {
+                switch destination {
+                case .cupboard: CupboardView(manager: cupboard)
+                case .brew: BrewFlowView(manager: cupboard)
+                case .learn: LearnView()
+                }
+            }
         }
     }
 
@@ -179,6 +199,10 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .topBarTrailing) {
+                workbenchMenu
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     model.newChat()
                 } label: {
@@ -189,6 +213,18 @@ struct ContentView: View {
                 .accessibilityLabel("New chat")
             }
         }
+    }
+
+    private var workbenchMenu: some View {
+        Menu {
+            Button("Start a brew", systemImage: "timer") { sheet = .brew }
+            Button("My cupboard", systemImage: "archivebox") { sheet = .cupboard }
+            Button("Flashcards", systemImage: "rectangle.on.rectangle") { sheet = .learn }
+        } label: {
+            Image(systemName: "cup.and.saucer")
+        }
+        .tint(Theme.accent)
+        .accessibilityLabel("Brew, cupboard and flashcards")
     }
 
     private func transcript(for model: ChatManager) -> some View {
@@ -239,10 +275,10 @@ struct ContentView: View {
     private func emptyState(for model: ChatManager) -> some View {
         VStack(alignment: .leading, spacing: Theme.xl) {
             VStack(alignment: .leading, spacing: Theme.sm) {
-                Text("\(model.beanCount.formatted()) beans, indexed.")
+                Text("\(model.beanCount.formatted()) Indonesian lots, indexed.")
                     .font(Theme.display)
                     .foregroundStyle(Theme.ink)
-                Text("The agent searches your collection before it answers, and shows you what it looked at.")
+                Text("Moka pot only. The agent searches the corpus and your own bags before it answers, and shows you what it looked at.")
                     .font(Theme.control)
                     .foregroundStyle(Theme.inkMuted)
             }
@@ -307,7 +343,7 @@ struct ContentView: View {
             memoryGauge(for: model)
 
             HStack(alignment: .bottom, spacing: Theme.sm) {
-                TextField("Ask about your beans", text: Binding(get: { model.draft }, set: { model.draft = $0 }), axis: .vertical)
+                TextField("Ask about beans, brewing, or your bags", text: Binding(get: { model.draft }, set: { model.draft = $0 }), axis: .vertical)
                     .font(Theme.control)
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1...4)

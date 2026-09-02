@@ -1,0 +1,149 @@
+//
+//  CupboardManager.swift
+//  Agentic
+//
+
+import Foundation
+import Observation
+import SwiftData
+
+/// Owns the bags and the brews: the `ModelContext` for them, and the job of
+/// pushing snapshots into the agent's `Cupboard` after every change. Kept
+/// apart from `ChatManager` because nothing here is about a conversation, and
+/// because every mutation has to reach the agent, not just the ones a chat
+/// turn happens to follow.
+@Observable
+@MainActor
+final class CupboardManager {
+    private(set) var beans: [OwnedBean] = []
+    private(set) var sessions: [BrewSession] = []
+    private(set) var failure: String?
+
+    private let context: ModelContext
+    private let cupboard: Cupboard
+
+    init(context: ModelContext, cupboard: Cupboard) {
+        self.context = context
+        self.cupboard = cupboard
+        refresh()
+    }
+
+    var isEmpty: Bool { beans.isEmpty }
+
+    func bean(id: UUID) -> OwnedBean? { beans.first { $0.id == id } }
+
+    func sessions(for bean: OwnedBean) -> [BrewSession] {
+        sessions.filter { $0.bean?.id == bean.id }.sorted { $0.date > $1.date }
+    }
+
+    /// The advice the cupboard screen shows for a bag, from the same rule
+    /// table the agent's tool reads, so the two can never disagree.
+    func grindAdvice(for bean: OwnedBean) -> BrewAdvisor.GrindAdvice {
+        let history = sessions(for: bean).map(BrewSessionSnapshot.init)
+        guard history.contains(where: { $0.outcome != nil }) else {
+            return BrewAdvisor.GrindAdvice(
+                direction: .unknown,
+                message: BrewAdvisor.startingPoint(for: bean.roastLevel)
+            )
+        }
+        return BrewAdvisor.nextGrind(from: history)
+    }
+
+    @discardableResult
+    func add(_ draft: BagScanner.Draft) -> OwnedBean {
+        let bean = OwnedBean(
+            displayName: draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines),
+            corpusReferenceId: nil,
+            roasterName: draft.roasterName.isEmpty ? nil : draft.roasterName,
+            island: draft.island,
+            subregion: draft.subregion.isEmpty ? nil : draft.subregion,
+            processingMethod: draft.processingMethod,
+            roastLevel: draft.roastLevel,
+            roastDate: draft.roastDate,
+            bagWeightGrams: draft.weightGrams,
+            scanConfidence: draft.scanConfidence
+        )
+        context.insert(bean)
+        save()
+        return bean
+    }
+
+    func delete(_ bean: OwnedBean) {
+        context.delete(bean)
+        save()
+    }
+
+    @discardableResult
+    func startBrew(bean: OwnedBean?, potSizeCups: Int, grindSetting: String, heatLevel: HeatLevel, doseGrams: Double?) -> BrewSession {
+        let session = BrewSession(
+            bean: bean,
+            potSizeCups: potSizeCups,
+            grindSetting: grindSetting,
+            doseGrams: doseGrams,
+            heatLevel: heatLevel
+        )
+        context.insert(session)
+        save()
+        return session
+    }
+
+    /// Written as the phases happen rather than at the end, so a brew
+    /// abandoned halfway still keeps the timestamps it did record.
+    func record(_ session: BrewSession, firstDrip: Int? = nil, gurgle: Int? = nil, total: Int? = nil, pulledAtGurgle: Bool? = nil) {
+        if let firstDrip { session.timeToFirstDripSeconds = firstDrip }
+        if let gurgle { session.timeToGurgleSeconds = gurgle }
+        if let total { session.totalSeconds = total }
+        if let pulledAtGurgle { session.pulledAtGurgle = pulledAtGurgle }
+        save()
+    }
+
+    func finish(_ session: BrewSession, outcome: BrewOutcome) {
+        session.outcome = outcome
+        save()
+    }
+
+    func addTastingNote(
+        to bean: OwnedBean,
+        acidity: IntensityLevel,
+        body: IntensityLevel,
+        flavors: [FlavorNote],
+        rating: Int,
+        brewSessionId: UUID?,
+        freeformNote: String?
+    ) {
+        let note = TastingNote(
+            perceivedAcidity: acidity,
+            perceivedBody: body,
+            flavorNotes: flavors,
+            rating: rating,
+            brewSessionId: brewSessionId,
+            freeformNote: freeformNote
+        )
+        note.bean = bean
+        context.insert(note)
+        save()
+    }
+
+    private func save() {
+        do {
+            try context.save()
+        } catch {
+            failure = "Could not save: \(error.localizedDescription)"
+        }
+        refresh()
+    }
+
+    /// Refetch and re-push together. The agent reads snapshots rather than
+    /// SwiftData objects, so a change the view can see but the tool cannot
+    /// would make the agent answer about a stale cupboard.
+    private func refresh() {
+        beans = ((try? context.fetch(FetchDescriptor<OwnedBean>())) ?? [])
+            .sorted { $0.purchaseDate > $1.purchaseDate }
+        sessions = ((try? context.fetch(FetchDescriptor<BrewSession>())) ?? [])
+            .sorted { $0.date > $1.date }
+
+        let beanSnapshots = beans.map(OwnedBeanSnapshot.init)
+        let sessionSnapshots = sessions.map(BrewSessionSnapshot.init)
+        Task { await cupboard.replace(beans: beanSnapshots, sessions: sessionSnapshots) }
+    }
+}
