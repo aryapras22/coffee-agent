@@ -431,6 +431,26 @@ struct BagScanDateTests {
         #expect(parsed?.day == 28)
     }
 
+    @Test("an OCR garble of a month is repaired when only one month is close")
+    func garbledMonthIsRepaired() {
+        let parsed = day(BagScanner.parseDate("01 AUb 2026"))
+        #expect(parsed?.year == 2026)
+        #expect(parsed?.month == 8)
+        #expect(parsed?.day == 1)
+    }
+
+    @Test("a garble close to several months is left blank rather than guessed")
+    func ambiguousMonthIsRefused() {
+        // "mai" sits one character from March, May and Indonesian Mei.
+        #expect(BagScanner.parseDate("01 Mai 2026") == nil)
+    }
+
+    @Test("a word that is no month at all is not forced into one")
+    func distantWordIsNotAMonth() {
+        #expect(BagScanner.parseDate("01 Roasted 2026") == nil)
+        #expect(BagScanner.parseDate("200 Grams 2026") == nil)
+    }
+
     @Test("unreadable text yields no date rather than today's")
     func garbageYieldsNil() {
         #expect(BagScanner.parseDate("ROAST DATE") == nil)

@@ -294,7 +294,62 @@ nonisolated enum BagScanner {
                 if let date = formatter.date(from: text) { return date }
             }
         }
-        return nil
+        return repairedMonth(in: text)
+    }
+
+    private static let monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+
+    /// Indonesian spellings as well, for a date that reached here without
+    /// passing through `normalize`.
+    private static let monthPrefixes: [(String, Int)] = {
+        let indonesian = ["jan", "feb", "mar", "apr", "mei", "jun",
+                          "jul", "agu", "sep", "okt", "nov", "des"]
+        return monthNames.enumerated().map { (String($0.element.prefix(3)).lowercased(), $0.offset + 1) }
+            + indonesian.enumerated().map { ($0.element, $0.offset + 1) }
+    }()
+
+    private static func editDistance(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        var previous = Array(0...b.count)
+        for i in 1...max(a.count, 1) where !a.isEmpty {
+            var current = [i] + Array(repeating: 0, count: b.count)
+            for j in 1...max(b.count, 1) where !b.isEmpty {
+                current[j] = a[i - 1] == b[j - 1]
+                    ? previous[j - 1]
+                    : min(previous[j - 1], previous[j], current[j - 1]) + 1
+            }
+            previous = current
+        }
+        return previous[b.count]
+    }
+
+    /// OCR garbles month names on a matte bag: "01 AUb 2026" is the first of
+    /// August. Repairs one only when a single month is within one character of
+    /// what was read. Two candidates at the same distance means the date stays
+    /// blank, because a confidently wrong roast date is worse than none.
+    static func repairedMonth(in text: String) -> Date? {
+        guard
+            let match = text.range(of: "\\b\\d{1,2}\\s+[A-Za-z]{3,}\\s+\\d{4}\\b", options: [.regularExpression]),
+            case let parts = text[match].split(whereSeparator: \.isWhitespace),
+            parts.count == 3
+        else { return nil }
+
+        let read = String(parts[1].prefix(3)).lowercased()
+        let scored = monthPrefixes.map { ($0.1, editDistance(read, $0.0)) }.filter { $0.1 <= 1 }
+        let best = scored.map(\.1).min()
+        let candidates = Set(scored.filter { $0.1 == best }.map(\.0))
+        guard candidates.count == 1, let month = candidates.first else { return nil }
+
+        let repaired = "\(parts[0]) \(monthNames[month - 1]) \(parts[2])"
+        Log.write(.scan, "repaired month \"\(parts[1])\" as \(monthNames[month - 1])")
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "d MMMM yyyy"
+        return formatter.date(from: repaired)
     }
 
     /// The bag the confirm screen shows and, once confirmed, saves. Held as a

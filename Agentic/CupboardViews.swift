@@ -54,8 +54,14 @@ struct CupboardView: View {
             }
             .sheet(item: $entry) { route in
                 switch route {
-                case .scan: ScanFlowView(manager: manager)
-                case .manual: BagDraftSheet(manager: manager, draft: BagScanner.Draft(), ocrText: nil)
+                case .scan:
+                    ScanFlowView(manager: manager)
+                case .manual:
+                    NavigationStack {
+                        BagDraftForm(manager: manager, draft: BagScanner.Draft(), ocrText: nil) {
+                            entry = nil
+                        }
+                    }
                 }
             }
         }
@@ -215,87 +221,92 @@ private struct LabelledRow: View {
 /// The confirm step the scan pipeline requires, and the whole of the manual
 /// path. Coffee bags are matte, curved and often dark on dark, so OCR will
 /// misread; nothing reaches the store without passing through here.
-struct BagDraftSheet: View {
+///
+/// Carries no `NavigationStack` and calls `onFinish` rather than `dismiss()`,
+/// so it can be presented as a sheet on the manual path and shown inline on
+/// the scan path. That is what keeps the scan flow to a single presentation:
+/// pushing this as a second sheet from a view that was itself still settling
+/// is what produced "whose view is not in the window hierarchy".
+struct BagDraftForm: View {
     let manager: CupboardManager
     @State var draft: BagScanner.Draft
     let ocrText: String?
+    let onFinish: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var hasRoastDate: Bool
 
-    init(manager: CupboardManager, draft: BagScanner.Draft, ocrText: String?) {
+    init(manager: CupboardManager, draft: BagScanner.Draft, ocrText: String?, onFinish: @escaping () -> Void) {
         self.manager = manager
         self._draft = State(initialValue: draft)
         self.ocrText = ocrText
+        self.onFinish = onFinish
         self._hasRoastDate = State(initialValue: draft.roastDate != nil)
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Name", text: $draft.displayName)
-                    TextField("Roaster", text: $draft.roasterName)
-                    TextField("Region", text: $draft.subregion)
-                }
-                .listRowBackground(Theme.paperRaised)
+        Form {
+            Section {
+                TextField("Name", text: $draft.displayName)
+                TextField("Roaster", text: $draft.roasterName)
+                TextField("Region", text: $draft.subregion)
+            }
+            .listRowBackground(Theme.paperRaised)
 
-                Section {
-                    Picker("Island", selection: $draft.island) {
-                        Text("Not stated").tag(Island?.none)
-                        ForEach(Island.allCases, id: \.self) { Text($0.label).tag(Island?.some($0)) }
-                    }
-                    Picker("Process", selection: $draft.processingMethod) {
-                        Text("Not stated").tag(ProcessingMethod?.none)
-                        ForEach(ProcessingMethod.allCases, id: \.self) { Text($0.label).tag(ProcessingMethod?.some($0)) }
-                    }
-                    Picker("Roast", selection: $draft.roastLevel) {
-                        Text("Not stated").tag(RoastLevel?.none)
-                        ForEach(RoastLevel.allCases, id: \.self) { Text($0.label).tag(RoastLevel?.some($0)) }
-                    }
+            Section {
+                Picker("Island", selection: $draft.island) {
+                    Text("Not stated").tag(Island?.none)
+                    ForEach(Island.allCases, id: \.self) { Text($0.label).tag(Island?.some($0)) }
                 }
-                .listRowBackground(Theme.paperRaised)
-
-                Section {
-                    Toggle("Roast date on the bag", isOn: $hasRoastDate)
-                    if hasRoastDate {
-                        DatePicker(
-                            "Roasted",
-                            selection: Binding(get: { draft.roastDate ?? .now }, set: { draft.roastDate = $0 }),
-                            in: ...Date.now,
-                            displayedComponents: .date
-                        )
-                    }
-                    TextField("Bag weight in grams", value: $draft.weightGrams, format: .number)
-                        .keyboardType(.numberPad)
+                Picker("Process", selection: $draft.processingMethod) {
+                    Text("Not stated").tag(ProcessingMethod?.none)
+                    ForEach(ProcessingMethod.allCases, id: \.self) { Text($0.label).tag(ProcessingMethod?.some($0)) }
                 }
-                .listRowBackground(Theme.paperRaised)
-
-                if let ocrText {
-                    Section("What the scan read") {
-                        Text(ocrText).font(Theme.trace).foregroundStyle(Theme.inkMuted)
-                    }
-                    .listRowBackground(Theme.paperRaised)
+                Picker("Roast", selection: $draft.roastLevel) {
+                    Text("Not stated").tag(RoastLevel?.none)
+                    ForEach(RoastLevel.allCases, id: \.self) { Text($0.label).tag(RoastLevel?.some($0)) }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Theme.paper)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Theme.paper, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(ocrText == nil ? "New bag" : "Check the scan")
-                        .font(Theme.display)
-                        .foregroundStyle(Theme.ink)
+            .listRowBackground(Theme.paperRaised)
+
+            Section {
+                Toggle("Roast date on the bag", isOn: $hasRoastDate)
+                if hasRoastDate {
+                    DatePicker(
+                        "Roasted",
+                        selection: Binding(get: { draft.roastDate ?? .now }, set: { draft.roastDate = $0 }),
+                        in: ...Date.now,
+                        displayedComponents: .date
+                    )
                 }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }.tint(Theme.inkMuted)
+                TextField("Bag weight in grams", value: $draft.weightGrams, format: .number)
+                    .keyboardType(.numberPad)
+            }
+            .listRowBackground(Theme.paperRaised)
+
+            if let ocrText {
+                Section("What the scan read") {
+                    Text(ocrText).font(Theme.trace).foregroundStyle(Theme.inkMuted)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .tint(Theme.accent)
-                        .disabled(!draft.isSaveable)
-                }
+                .listRowBackground(Theme.paperRaised)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.paper)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Theme.paper, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(ocrText == nil ? "New bag" : "Check the scan")
+                    .font(Theme.display)
+                    .foregroundStyle(Theme.ink)
+            }
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { onFinish() }.tint(Theme.inkMuted)
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }
+                    .tint(Theme.accent)
+                    .disabled(!draft.isSaveable)
             }
         }
     }
@@ -308,12 +319,13 @@ struct BagDraftSheet: View {
         if !hasRoastDate { confirmed.roastDate = nil }
         if confirmed.scanConfidence == .scanUnverified { confirmed.scanConfidence = .scanConfirmed }
         manager.add(confirmed)
-        dismiss()
+        onFinish()
     }
 }
 
 /// Capture, read, extract, confirm. The confirm step is mandatory, so this
-/// view never writes to the store itself: it hands a draft to `BagDraftSheet`.
+/// view never writes to the store itself: it swaps its own content for
+/// `BagDraftForm` once a draft exists.
 struct ScanFlowView: View {
     let manager: CupboardManager
 
@@ -331,92 +343,96 @@ struct ScanFlowView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: Theme.lg) {
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxHeight: 220)
-                        .clipShape(.rect(cornerRadius: Theme.bubbleRadius))
-                }
+            if let draft {
+                BagDraftForm(manager: manager, draft: draft, ocrText: ocrText) { dismiss() }
+            } else {
+                capture
+            }
+        }
+    }
 
-                switch stage {
-                case .capture:
-                    Text("Photograph the label straight on, filling the frame. Matte and curved bags read badly, so you will get a chance to correct every field.")
+    private var capture: some View {
+    VStack(alignment: .leading, spacing: Theme.lg) {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 220)
+                    .clipShape(.rect(cornerRadius: Theme.bubbleRadius))
+            }
+
+            switch stage {
+            case .capture:
+                Text("Photograph the label straight on, filling the frame. Matte and curved bags read badly, so you will get a chance to correct every field.")
+                    .font(Theme.control)
+                    .foregroundStyle(Theme.inkMuted)
+
+                Button("Take a photo") { showingCamera = true }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.accent)
+
+                PhotosPicker("Choose from library", selection: $pickerItem, matching: .images)
+                    .tint(Theme.accent)
+
+            case .reading, .extracting:
+                HStack(spacing: Theme.sm) {
+                    ProgressView().controlSize(.small)
+                    Text(stage == .reading ? "Reading the label" : "Pulling out the fields")
                         .font(Theme.control)
                         .foregroundStyle(Theme.inkMuted)
-
-                    Button("Take a photo") { showingCamera = true }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.accent)
-
-                    PhotosPicker("Choose from library", selection: $pickerItem, matching: .images)
-                        .tint(Theme.accent)
-
-                case .reading, .extracting:
-                    HStack(spacing: Theme.sm) {
-                        ProgressView().controlSize(.small)
-                        Text(stage == .reading ? "Reading the label" : "Pulling out the fields")
-                            .font(Theme.control)
-                            .foregroundStyle(Theme.inkMuted)
-                    }
-
-                case .ready:
-                    EmptyView()
                 }
 
-                if let ocrText, stage != .capture {
-                    Text(ocrText).font(Theme.trace).foregroundStyle(Theme.inkMuted)
-                }
-
-                if let failure {
-                    Text(failure).font(Theme.trace).foregroundStyle(Theme.danger)
-                }
-
-                Spacer(minLength: 0)
+            case .ready:
+                EmptyView()
             }
-            .padding(Theme.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.paper)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Theme.paper, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Scan a bag").font(Theme.display).foregroundStyle(Theme.ink)
-                }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }.tint(Theme.inkMuted)
-                }
+
+            if let ocrText, stage != .capture {
+                Text(ocrText).font(Theme.trace).foregroundStyle(Theme.inkMuted)
             }
-            // Processing waits for the camera to finish dismissing. Starting it
-            // from `onCapture` sets `draft` while the cover is still on screen,
-            // and the confirm sheet then tries to present from a view that is
-            // no longer in the window hierarchy.
-            .fullScreenCover(isPresented: $showingCamera, onDismiss: processPendingCapture) {
-                CameraPicker { captured in
-                    image = captured
-                    pendingImage = captured
-                }
-                .ignoresSafeArea()
+
+            if let failure {
+                Text(failure).font(Theme.trace).foregroundStyle(Theme.danger)
             }
-            .sheet(item: Binding(get: { draft.map(IdentifiedDraft.init) }, set: { if $0 == nil { draft = nil } })) { wrapper in
-                BagDraftSheet(manager: manager, draft: wrapper.draft, ocrText: ocrText)
-                    .onDisappear { dismiss() }
+
+            Spacer(minLength: 0)
+        }
+        .padding(Theme.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.paper)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Theme.paper, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Scan a bag").font(Theme.display).foregroundStyle(Theme.ink)
             }
-            .onChange(of: pickerItem) {
-                guard let pickerItem else { return }
-                Task {
-                    guard
-                        let data = try? await pickerItem.loadTransferable(type: Data.self),
-                        let loaded = UIImage(data: data)
-                    else {
-                        Log.write(.failure, "photo library item could not be loaded")
-                        failure = "That image could not be loaded."
-                        return
-                    }
-                    image = loaded
-                    await process(loaded)
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }.tint(Theme.inkMuted)
+            }
+        }
+        // Processing waits for the camera to finish dismissing. Starting it
+        // from `onCapture` sets `draft` while the cover is still on screen,
+        // and the confirm sheet then tries to present from a view that is
+        // no longer in the window hierarchy.
+        .fullScreenCover(isPresented: $showingCamera, onDismiss: processPendingCapture) {
+            CameraPicker { captured in
+                image = captured
+                pendingImage = captured
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: pickerItem) {
+            guard let pickerItem else { return }
+            Task {
+                guard
+                    let data = try? await pickerItem.loadTransferable(type: Data.self),
+                    let loaded = UIImage(data: data)
+                else {
+                    Log.write(.failure, "photo library item could not be loaded")
+                    failure = "That image could not be loaded."
+                    return
                 }
+                image = loaded
+                await process(loaded)
             }
         }
     }
@@ -453,13 +469,6 @@ struct ScanFlowView: View {
             failure = "\(error.localizedDescription) You can still enter the bag by hand."
         }
     }
-}
-
-/// `sheet(item:)` needs identity, and a draft is a value the user is still
-/// editing, so the identity belongs to the presentation rather than the draft.
-private struct IdentifiedDraft: Identifiable {
-    let id = UUID()
-    let draft: BagScanner.Draft
 }
 
 struct CameraPicker: UIViewControllerRepresentable {

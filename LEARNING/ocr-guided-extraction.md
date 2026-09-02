@@ -14,8 +14,6 @@ Worse, the refusal is probabilistic over the whole prompt, not a lookup. Measure
 
 ## Why this and not the alternatives
 
-Typing a bag in by hand is six fields of transcription from packaging that already states all six. That is the baseline to beat.
-
 The first design rejected a regex pre-pass, reasoning that it would not remove the confirm screen and would add a second extraction path that could disagree with the first. That reasoning assumed the model could read the text. It cannot, so the pre-pass is not an optional second path; it is what lets the first one run at all.
 
 Three layers, each earning its place against the measured failure:
@@ -40,23 +38,23 @@ The cost is that the model can still invent a field the bag never printed. That 
 
 ## Terminology
 
-**Guided generation**: constraining decoding to a schema so the output is a typed value by construction. Driven by the `@Generable` macro and `@Guide` descriptions.
+**Guided generation**: constraining decoding to a schema so the output is a typed value by construction, driven by `@Generable` and `@Guide`.
 
-**Recognition level**: `.accurate` recognises thirty languages including Indonesian; `.fast` recognises six, all Western European. Changing the level would silently drop half of a bilingual bag, so a test asserts the gap rather than a comment describing it.
+**Recognition level**: `.accurate` recognises thirty languages including Indonesian; `.fast` recognises six, all Western European. Changing it would silently drop half of a bilingual bag, so a test asserts the gap.
 
-**Custom words**: a supplementary lexicon for language correction, which rewrites what it does not recognise. Bener Meriah is exactly what it would rewrite.
+**Custom words**: a supplementary lexicon for language correction, which rewrites what it does not recognise. Bener Meriah is exactly that.
 
 ## Pitfalls
 
-Running more than two `RecognizeTextRequest` operations concurrently can deadlock Vision. Scan one image at a time.
+More than two concurrent `RecognizeTextRequest` operations can deadlock Vision. Scan one image at a time.
 
-`automaticallyDetectsLanguage` is wrong for a bilingual label: it picks one language for the image, and a bag prints its origin in Indonesian and its marketing copy in English, so whichever it picks loses the other half. `recognitionLanguages` takes an ordered list, so asking for both is the bilingual case rather than a choice.
+`automaticallyDetectsLanguage` is wrong for a bilingual label: it picks one language for the image, and a bag prints its origin in Indonesian and its marketing copy in English, so whichever it picks loses the other half. `recognitionLanguages` takes an ordered list, so ask for both.
 
-No setting makes OCR reliable on the physical object. Bags are matte, curved, and often dark on dark. Misreads are the normal case, which is why the confirm screen is a step in the pipeline rather than a nicety.
+No setting makes OCR reliable on the physical object. Bags are matte, curved, and often dark on dark. Misreads are the normal case, which is why the confirm screen is a pipeline step rather than a nicety.
 
-A date returned as `yyyy-MM-dd` is the happy path, but the model sometimes copies the printed form through. `parseDate` tries several formats under `en_US_POSIX` and `id_ID` and returns nil rather than today. A silently wrong roast date poisons every freshness answer afterwards.
+A date returned as `yyyy-MM-dd` is the happy path, but the model sometimes copies the printed form through, garbles and all. `parseDate` tries several formats, then repairs a month only when exactly one is within a character of what was read: "01 AUb 2026" is August, while "01 Mai 2026" sits equally close to three months and stays blank. A silently wrong roast date poisons every freshness answer afterwards.
 
-Confidence tracking only works if it is honest. Promoting `.scanUnverified` anywhere but the confirm action makes the flag meaningless, and the agent's instructions depend on it to know when to hedge.
+Confidence tracking only works if it is honest. Promoting `.scanUnverified` anywhere but the confirm action makes the flag meaningless, and the agent depends on it to know when to hedge.
 
 ## Further reading
 
