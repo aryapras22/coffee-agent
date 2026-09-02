@@ -44,6 +44,9 @@ class CoffeeAgent {
     private let ownedTool: OwnedBeanTool
     private let quizTool: TasteQuizTool
     private let adviceTool: BrewAdviceTool
+    private let compareTool: CompareTastingTool
+    private let choicesTool: OfferChoicesTool
+    private let flashcardTool: FlashcardTool
     private let webSearchTool: WebSearchTool
     private let nearbyPlacesTool: NearbyPlacesTool
     /// Exposed so the chat can collect a turn's cafes after the run; the tool
@@ -52,6 +55,10 @@ class CoffeeAgent {
     /// Snapshots of the user's own bags, refilled by `ChatManager` before each
     /// turn. The owned-bean and dial-in tools read from here.
     let cupboard = Cupboard()
+    /// Result cards the turn's tools produced, drained by `ChatManager` onto
+    /// the reply. Same side channel as `placeLog`, for the same reason: a tool
+    /// has one return value and the model is already using it.
+    let cardLog = CardLog()
 
     /// A single string rather than a built `Instructions` value, so a stored
     /// Chat Session's recap can be folded in alongside it without relying on
@@ -63,9 +70,14 @@ class CoffeeAgent {
 
         searchBeanCorpus is the reference corpus of Indonesian lots. An empty result there means no such bean is known.
         searchOwnedBeans is the user's own cupboard. cupboardEmpty means they have added no bags yet; noMatchesOwned means they own nothing matching, not that the bean does not exist. Keep those two apart when you answer.
+        offerChoices turns a question you are asking into tappable answers. Call it whenever you ask the user to pick between a few things, and ask the question in your reply too. Two to four options, each phrased as something they could have typed.
         matchTasteProfile runs the taste quiz. Ask how the cup should feel and which flavor pulls them in, then call it. A status of onlyCompromisedMatches means every match rates marginal on a moka pot: say that plainly, name the compromise, and let them choose.
         adviseNextGrind reads their logged brews and returns the grind change. Pass its advice on as it stands, and do not substitute your own. When it says to hold the grind, do not suggest changing it.
+        compareTastingNotes puts the corpus profile, the roaster's printed notes and what the user tasted side by side. Do not reconcile the three into one answer: where they disagree is the useful part. A status of noCorpusLink means the bag was never matched to a reference lot, which is not the same as the profile disagreeing.
+        showFlashcard deals one card face down. Pass the ids you have already shown so the deck moves on. Say what the card asks, and do not answer it.
         brewsAwaitingReview counts brews the user logged but never said anything about. Those are the evidence the dial-in is missing, so offer to take the verdict: "you have 2 brews from this bag without notes, how did they taste?" Never invent what they might have been.
+
+        A bag with a grindSize other than whole bean was bought pre-ground, so grind is not a variable the user can move. adviseNextGrind returns a grindDirection of "constrained" in that case: pass on the heat and timing advice it gives and never tell them to change the grind.
 
         A roastRecommendation of nothing means the corpus has no verified roast for that bean. Say it is unverified rather than filling it in.
         A bean whose provenance is "Scanned, not confirmed" was read off a bag label and never checked by a human. Flag that before comparing it to the corpus.
@@ -76,18 +88,23 @@ class CoffeeAgent {
         Cite the bean names you relied on. Keep answers short.
         """
 
+    static let toolCount = 9
+
     init(resource: String = "indonesian_beans") throws {
         let profiles = try Self.loadProfiles(resource: resource)
         let store = BeanProfileStore(profiles: profiles)
         self.store = store
         self.beanCount = profiles.count
         self.searchInfrastructure = SearchInfrastructure(store: store)
-        self.corpusTool = BeanCorpusTool(store: store)
-        self.ownedTool = OwnedBeanTool(cupboard: cupboard)
-        self.quizTool = TasteQuizTool(store: store)
+        self.corpusTool = BeanCorpusTool(store: store, log: cardLog)
+        self.ownedTool = OwnedBeanTool(cupboard: cupboard, store: store, log: cardLog)
+        self.quizTool = TasteQuizTool(store: store, log: cardLog)
         self.adviceTool = BrewAdviceTool(cupboard: cupboard)
-        self.webSearchTool = WebSearchTool(apiKey: loadTavilyKey())
-        self.nearbyPlacesTool = NearbyPlacesTool(locationProvider: LocationProvider(), log: placeLog)
+        self.compareTool = CompareTastingTool(cupboard: cupboard, store: store, log: cardLog)
+        self.choicesTool = OfferChoicesTool(log: cardLog)
+        self.flashcardTool = FlashcardTool(log: cardLog)
+        self.webSearchTool = WebSearchTool(apiKey: loadTavilyKey(), cards: cardLog)
+        self.nearbyPlacesTool = NearbyPlacesTool(locationProvider: LocationProvider(), log: placeLog, cards: cardLog)
         Log.write(.corpus, "loaded \(profiles.count) profiles from \(resource).json")
     }
 
@@ -109,9 +126,12 @@ class CoffeeAgent {
     /// alongside the persona, so a rebuilt session reads as standing context
     /// the model was given up front, not conversation it remembers having.
     func makeSession(recap: String? = nil) -> LanguageModelSession {
-        Log.write(.agent, "session built, 6 tools, recap \(recap == nil ? "none" : "\(recap!.count) chars")")
+        Log.write(.agent, "session built, \(Self.toolCount) tools, recap \(recap == nil ? "none" : "\(recap!.count) chars")")
         return LanguageModelSession(
-            tools: [corpusTool, ownedTool, quizTool, adviceTool, webSearchTool, nearbyPlacesTool],
+            tools: [
+                corpusTool, ownedTool, quizTool, adviceTool, compareTool,
+                choicesTool, flashcardTool, webSearchTool, nearbyPlacesTool,
+            ],
             instructions: Instructions {
                 Self.personaInstructions
                 if let recap {

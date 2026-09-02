@@ -83,6 +83,8 @@ struct NearbyPlacesTool: Tool {
 
     let locationProvider: CoordinateProviding
     let log: PlaceLog
+    /// Defaulted so the tool stays constructible without the chat around it.
+    var cards: CardLog?
 
     @Generable
     struct Arguments {
@@ -130,6 +132,18 @@ struct NearbyPlacesTool: Tool {
         }.sorted { $0.distanceMeters < $1.distanceMeters }
 
         await log.append(found)
+        await cards?.append(
+            found.map { place in
+                .seller(
+                    SellerCard(
+                        name: place.name,
+                        detail: "\(Int(place.distanceMeters))m away. \(place.address)",
+                        url: nil,
+                        source: "via Maps"
+                    )
+                )
+            }
+        )
 
         let hits = found.map {
             PlaceHit(name: $0.name, address: $0.address, distanceMeters: $0.distanceMeters)

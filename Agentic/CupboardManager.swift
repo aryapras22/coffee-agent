@@ -20,12 +20,23 @@ final class CupboardManager {
     private(set) var sessions: [BrewSession] = []
     private(set) var failure: String?
 
+    /// The brew currently running, held here rather than in a view so the
+    /// timer keeps ticking while the reader scrolls the transcript, switches
+    /// chats, or opens the cupboard. A timer that only exists while its own
+    /// screen is on top is not a timer.
+    private(set) var activeBrew: BrewTimerModel?
+    /// The brew the user chose to review, shown in the same pinned slot the
+    /// timer occupied.
+    private(set) var reviewing: BrewSession?
+
     private let context: ModelContext
     private let cupboard: Cupboard
+    private let profiles: BeanProfileStore
 
-    init(context: ModelContext, cupboard: Cupboard) {
+    init(context: ModelContext, cupboard: Cupboard, profiles: BeanProfileStore) {
         self.context = context
         self.cupboard = cupboard
+        self.profiles = profiles
         refresh()
     }
 
@@ -42,12 +53,15 @@ final class CupboardManager {
     func grindAdvice(for bean: OwnedBean) -> BrewAdvisor.GrindAdvice {
         let history = sessions(for: bean).map(BrewSessionSnapshot.init)
         guard history.contains(where: { $0.outcome != nil }) else {
+            guard bean.grindSize.isAdjustable else {
+                return BrewAdvisor.nextGrind(from: [], grindSize: bean.grindSize)
+            }
             return BrewAdvisor.GrindAdvice(
                 direction: .unknown,
                 message: BrewAdvisor.startingPoint(for: bean.roastLevel)
             )
         }
-        return BrewAdvisor.nextGrind(from: history)
+        return BrewAdvisor.nextGrind(from: history, grindSize: bean.grindSize)
     }
 
     /// The photo is written before the bean, so a bag never persists a
@@ -63,14 +77,23 @@ final class CupboardManager {
                 Log.write(.failure, "bag photo not saved: \(error)")
             }
         }
-        return add(draft, photoFilename: filename)
-    }
 
-    @discardableResult
-    func add(_ draft: BagScanner.Draft, photoFilename: String? = nil) -> OwnedBean {
+        let name = draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let match = BeanMatcher.best(
+            name: name,
+            subregion: draft.subregion,
+            island: draft.island,
+            in: await profiles.allProfiles()
+        )
+        if let match {
+            Log.write(.cupboard, "linked \"\(name)\" to corpus \(match.profile.id), \(match.reason)")
+        } else {
+            Log.write(.cupboard, "no corpus lot matched \"\(name)\", comparison will say so")
+        }
+
         let bean = OwnedBean(
-            displayName: draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines),
-            corpusReferenceId: nil,
+            displayName: name,
+            corpusReferenceId: match?.profile.id,
             roasterName: draft.roasterName.isEmpty ? nil : draft.roasterName,
             island: draft.island,
             subregion: draft.subregion.isEmpty ? nil : draft.subregion,
@@ -78,13 +101,23 @@ final class CupboardManager {
             roastLevel: draft.roastLevel,
             roastDate: draft.roastDate,
             bagWeightGrams: draft.weightGrams,
-            bagPhotoFilename: photoFilename,
+            grindSize: draft.grindSize,
+            grade: draft.grade.isEmpty ? nil : draft.grade,
+            roasterNotes: draft.roasterNotes,
+            bagPhotoFilename: filename,
             scanConfidence: draft.scanConfidence
         )
         context.insert(bean)
         save()
-        Log.write(.cupboard, "added \"\(bean.displayName)\" provenance=\(bean.scanConfidence.rawValue) island=\(bean.island?.rawValue ?? "none") roast=\(bean.roastLevel?.rawValue ?? "none")")
+        Log.write(.cupboard, "added \"\(bean.displayName)\" provenance=\(bean.scanConfidence.rawValue) island=\(bean.island?.rawValue ?? "none") roast=\(bean.roastLevel?.rawValue ?? "none") grind=\(bean.grindSize.rawValue)")
         return bean
+    }
+
+    /// The corpus lot a bag was linked to, by name. Nil when nothing matched,
+    /// which the caller is expected to say out loud rather than hide.
+    func corpusName(for bean: OwnedBean) async -> String? {
+        guard let id = bean.corpusReferenceId else { return nil }
+        return await profiles.profile(id: id)?.name
     }
 
     func delete(_ bean: OwnedBean) {
@@ -139,11 +172,46 @@ final class CupboardManager {
         Log.write(.brew, "recorded \(marks.compactMap { $0 }.joined(separator: " "))")
     }
 
+    /// Starting a brew pins the timer for the whole app. Cancelling an
+    /// existing one first, rather than refusing, because the user asking to
+    /// brew again is a clearer signal than a timer they forgot to stop.
+    func beginBrew(bean: OwnedBean?, potSizeCups: Int, grindSetting: String, heatLevel: HeatLevel, doseGrams: Double?) {
+        activeBrew?.stop()
+        reviewing = nil
+        let session = startBrew(
+            bean: bean,
+            potSizeCups: potSizeCups,
+            grindSetting: grindSetting,
+            heatLevel: heatLevel,
+            doseGrams: doseGrams
+        )
+        activeBrew = BrewTimerModel(session: session, manager: self)
+    }
+
+    /// Unpins the timer. The session is already stored with every phase it
+    /// reached, so nothing is lost by letting go of it here.
+    func dismissBrew() {
+        activeBrew?.stop()
+        activeBrew = nil
+    }
+
+    func beginReview(of session: BrewSession) {
+        Log.write(.ui, "reviewing brew from \(session.date.formatted(date: .abbreviated, time: .shortened))")
+        activeBrew?.stop()
+        activeBrew = nil
+        reviewing = session
+    }
+
+    func endReview() {
+        reviewing = nil
+    }
+
     /// Reviewing is a separate act from brewing. The session is already
     /// stored by the time this runs; all it adds is the verdict.
     func review(_ session: BrewSession, outcome: BrewOutcome) {
         session.outcome = outcome
         save()
+        if reviewing?.id == session.id { reviewing = nil }
         Log.write(.brew, "reviewed symptom=\(outcome.symptom.rawValue) grind=\(session.grindSetting.isEmpty ? "unset" : session.grindSetting)")
     }
 

@@ -571,3 +571,164 @@ struct BagScanDateTests {
         #expect(BagScanner.parseDate(nil) == nil)
     }
 }
+
+@MainActor
+struct PreGroundDialInTests {
+    private func session(_ symptom: BrewSymptom?, grind: String = "12") -> BrewSessionSnapshot {
+        let brew = BrewSession(bean: OwnedBean(displayName: "Test"), potSizeCups: 3, grindSetting: grind)
+        brew.outcome = symptom.map { BrewOutcome(symptom: $0, note: nil) }
+        return BrewSessionSnapshot(brew)
+    }
+
+    @Test("a pre-ground bag never gets told to change the grind")
+    func extractionFaultsPivotAwayFromGrind() {
+        for symptom in [BrewSymptom.bitter, .burnt, .sour, .weak] {
+            let advice = BrewAdvisor.nextGrind(from: [session(symptom)], grindSize: .fine)
+            #expect(advice.direction == .constrained)
+            #expect(!advice.message.contains("coarser"))
+            #expect(!advice.message.contains("finer"))
+        }
+    }
+
+    @Test("the pivot names the variables that are left")
+    func constrainedAdviceNamesWhatIsStillOpen() {
+        let bitter = BrewAdvisor.advice(for: .bitter, grind: "n/a", grindSize: .fine)
+        #expect(bitter.message.contains("heat"))
+        #expect(bitter.message.contains("gurgle"))
+
+        let weak = BrewAdvisor.advice(for: .weak, grind: "n/a", grindSize: .fine)
+        #expect(weak.message.contains("basket"))
+    }
+
+    @Test("faults that were never about grind keep their own advice")
+    func bedAndHardwareFaultsAreUnaffected() {
+        #expect(BrewAdvisor.advice(for: .channeling, grind: "12", grindSize: .fine).direction == .hold)
+        #expect(BrewAdvisor.advice(for: .sputtering, grind: "12", grindSize: .fine).direction == .hold)
+        #expect(BrewAdvisor.advice(for: .balanced, grind: "12", grindSize: .fine).direction == .hold)
+    }
+
+    @Test("whole bean is unchanged, so the constraint only fires when it applies")
+    func wholeBeanKeepsTheGrindLever() {
+        #expect(BrewAdvisor.nextGrind(from: [session(.bitter)], grindSize: .wholeBean).direction == .coarser)
+        #expect(BrewAdvisor.constrainedAdvice(for: .bitter, grindSize: .wholeBean) != nil)
+    }
+
+    @Test("a pre-ground bag with no history says so instead of offering a starting grind")
+    func noHistoryOnAPreGroundBagStillAvoidsTheGrinder() {
+        let advice = BrewAdvisor.nextGrind(from: [], grindSize: .fine)
+        #expect(advice.direction == .constrained)
+        #expect(!advice.message.contains("table salt"))
+    }
+}
+
+struct BeanMatcherTests {
+    private let corpus = [
+        profile(id: "gayo", flavors: [.chocolate]),
+        profile(id: "toraja", flavors: [.earthy]),
+    ]
+
+    private func named(_ id: String, _ name: String, _ subregion: String, island: Island = .sumatra, score: Double? = nil) -> BeanProfile {
+        BeanProfile(
+            id: id, name: name, island: island, subregion: subregion,
+            altitudeMinMeters: nil, altitudeMaxMeters: nil, processingMethod: .washed,
+            variety: nil, flavorNotes: [.chocolate], acidity: .medium, body: .medium,
+            roastRecommendation: .medium, cuppingScore: score, dataSource: .coffeeReview
+        )
+    }
+
+    @Test("a shared origin word carries the link")
+    func sharedTermMatches() {
+        let corpus = [named("a", "Aceh Gayo", "Gayo Highlands"), named("b", "Toraja", "Sapan")]
+        let match = BeanMatcher.best(name: "Kopi Arabika Gayo", subregion: "", island: .sumatra, in: corpus)
+        #expect(match?.profile.id == "a")
+        #expect(match?.sharedTerms == ["gayo"])
+    }
+
+    @Test("island alone is not a match, because one island covers most of the corpus")
+    func islandAloneDoesNotLink() {
+        let corpus = [named("a", "Aceh Gayo", "Gayo Highlands")]
+        #expect(BeanMatcher.best(name: "Kopi Arabika", subregion: "", island: .sumatra, in: corpus) == nil)
+    }
+
+    @Test("words on every bag are ignored, so they cannot carry a match on their own")
+    func productWordsAreIgnored() {
+        #expect(BeanMatcher.terms(in: "Kopi Arabika Premium Gayo") == ["gayo"])
+    }
+
+    @Test("the island breaks a tie between two lots sharing the same word")
+    func islandBreaksTheTie() {
+        let corpus = [
+            named("java", "Ijen Estate", "Ijen", island: .java),
+            named("bali", "Ijen Blend", "Kintamani", island: .bali),
+        ]
+        let match = BeanMatcher.best(name: "Arabika Ijen", subregion: "", island: .java, in: corpus)
+        #expect(match?.profile.id == "java")
+    }
+
+    @Test("the same bag and corpus always produce the same link")
+    func matchingIsDeterministic() {
+        let corpus = [named("a", "Gayo One", "Gayo"), named("b", "Gayo Two", "Gayo")]
+        let first = BeanMatcher.best(name: "Gayo", subregion: "", island: nil, in: corpus)
+        let again = BeanMatcher.best(name: "Gayo", subregion: "", island: nil, in: corpus.reversed())
+        #expect(first?.profile.id == again?.profile.id)
+    }
+
+    @Test("a higher cupping score wins an otherwise equal match")
+    func scoreBreaksTheRemainingTie() {
+        let corpus = [named("low", "Gayo One", "Gayo", score: 81), named("high", "Gayo Two", "Gayo", score: 87)]
+        #expect(BeanMatcher.best(name: "Gayo", subregion: "", island: nil, in: corpus)?.profile.id == "high")
+    }
+}
+
+@MainActor
+struct QuickReplyTests {
+    private let bean = ThreadCard.bean(BeanCard(profile(id: "x")))
+
+    @Test("an offered question replaces whatever the cards would have suggested")
+    func choicesOutrankDerivedReplies() {
+        let cards: [ThreadCard] = [
+            bean,
+            .choices(ChoiceCard(question: "How should it feel?", options: ["Bright", "Smooth"])),
+        ]
+        #expect(QuickReplies.following(cards) == ["Bright", "Smooth"])
+    }
+
+    @Test("an unreviewed brew is offered before anything else about the bag")
+    func awaitingReviewChangesTheOffer() {
+        #expect(QuickReplies.following([.owned(owned(awaiting: 2))]).first == "Review my brews")
+        #expect(QuickReplies.following([.owned(owned(awaiting: 0))].map { $0 }).first == "Start brewing")
+    }
+
+    @Test("a turn with no cards falls back to the opening set rather than nothing")
+    func emptyFallsBackToTheOpeningSet() {
+        #expect(QuickReplies.following([]) == QuickReplies.opening)
+    }
+
+    private func owned(awaiting: Int) -> OwnedCard {
+        let bean = OwnedBean(displayName: "Toraja")
+        for _ in 0..<awaiting {
+            let brew = BrewSession(bean: bean, potSizeCups: 3, grindSetting: "12")
+            bean.brewSessions.append(brew)
+        }
+        return OwnedCard(OwnedBeanSnapshot(bean), corpusLink: nil)
+    }
+}
+
+struct BagScanGrindTests {
+    @Test("an explicit grind word on the label makes the bag pre-ground")
+    func grindWordIsRead() {
+        let normalized = BagScanner.normalize("Ukuran giling: Halus\nBerat bersih 200 g")
+        #expect(BagScanner.deterministicFields(from: normalized).grindSize == .fine)
+    }
+
+    @Test("a label that says nothing about grind leaves the bag whole bean")
+    func silenceMeansWholeBean() {
+        #expect(BagScanner.deterministicFields(from: "Arabika Gayo\n200 g").grindSize == .wholeBean)
+    }
+
+    @Test("the printed grade is picked up as printed")
+    func gradeIsRead() {
+        #expect(BagScanner.deterministicFields(from: "Arabika Gayo\nGrade 1\n200 g").grade == "Grade 1")
+        #expect(BagScanner.deterministicFields(from: "Arabika Gayo\n200 g").grade == "")
+    }
+}

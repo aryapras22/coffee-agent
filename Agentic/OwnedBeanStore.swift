@@ -31,6 +31,27 @@ nonisolated enum HeatLevel: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// How the bag was sold. The distinction is not cosmetic: a pre-ground bag
+/// takes grind off the table as a variable, so the dial-in advisor has to
+/// reach for heat and pull timing instead of sending the user to a grinder
+/// they cannot use. That is why this lives on `OwnedBean` and not only on
+/// `BrewSession`: it is a property of the bag, true of every brew from it.
+nonisolated enum GrindSize: String, Codable, CaseIterable, Sendable {
+    case wholeBean, coarse, medium, fine, extraFine
+
+    var label: String {
+        switch self {
+        case .wholeBean: "Whole bean"
+        case .coarse: "Coarse"
+        case .medium: "Medium"
+        case .fine: "Fine (halus)"
+        case .extraFine: "Extra fine"
+        }
+    }
+
+    var isAdjustable: Bool { self == .wholeBean }
+}
+
 nonisolated enum BrewSymptom: String, Codable, CaseIterable, Sendable {
     case balanced, bitter, sour, weak, burnt, channeling, sputtering
 
@@ -79,6 +100,15 @@ final class OwnedBean {
     var purchaseDate: Date = Date.now
     var bagWeightGrams: Int?
     var remainingGrams: Int?
+    private var grindSizeValue: String = GrindSize.wholeBean.rawValue
+    /// As printed. Indonesian bags grade by defect count rather than by score,
+    /// so "Grade 1" is a claim about the lot, not a rating of the cup.
+    var grade: String?
+    /// The roaster's own words, kept verbatim. Deliberately not `FlavorNote`:
+    /// a bag printing "Clean" and "Balance" is naming cupping attributes, not
+    /// flavours, and forcing them into the enum would either drop them or file
+    /// them under something the roaster never said.
+    private var roasterNotesData: Data?
     /// Filenames only. The container directory is reassigned on reinstall, so
     /// a stored absolute path would point at nothing; `BagPhotoStore` rebuilds
     /// the URL from the Documents directory at read time.
@@ -106,6 +136,9 @@ final class OwnedBean {
         purchaseDate: Date = .now,
         bagWeightGrams: Int? = nil,
         remainingGrams: Int? = nil,
+        grindSize: GrindSize = .wholeBean,
+        grade: String? = nil,
+        roasterNotes: [String] = [],
         bagPhotoFilename: String? = nil,
         scanConfidence: ScanConfidence = .userEntered
     ) {
@@ -120,6 +153,9 @@ final class OwnedBean {
         self.purchaseDate = purchaseDate
         self.bagWeightGrams = bagWeightGrams
         self.remainingGrams = remainingGrams ?? bagWeightGrams
+        self.grindSizeValue = grindSize.rawValue
+        self.grade = grade
+        self.roasterNotesData = Self.encodeNotes(roasterNotes)
         self.bagPhotoFilename = bagPhotoFilename
         self.scanConfidenceValue = scanConfidence.rawValue
     }
@@ -142,6 +178,23 @@ final class OwnedBean {
     var scanConfidence: ScanConfidence {
         get { ScanConfidence(rawValue: scanConfidenceValue) ?? .userEntered }
         set { scanConfidenceValue = newValue.rawValue }
+    }
+
+    var grindSize: GrindSize {
+        get { GrindSize(rawValue: grindSizeValue) ?? .wholeBean }
+        set { grindSizeValue = newValue.rawValue }
+    }
+
+    var roasterNotes: [String] {
+        get {
+            guard let roasterNotesData else { return [] }
+            return (try? JSONDecoder().decode([String].self, from: roasterNotesData)) ?? []
+        }
+        set { roasterNotesData = Self.encodeNotes(newValue) }
+    }
+
+    private static func encodeNotes(_ notes: [String]) -> Data? {
+        notes.isEmpty ? nil : try? JSONEncoder().encode(notes)
     }
 
     var daysSinceRoast: Int? {
@@ -297,6 +350,9 @@ nonisolated struct OwnedBeanSnapshot: Identifiable, Sendable {
     let remainingGrams: Int?
     let bagWeightGrams: Int?
     let scanConfidence: ScanConfidence
+    let grindSize: GrindSize
+    let grade: String?
+    let roasterNotes: [String]
     let bagPhotoFilename: String?
     let roastDatePhotoFilename: String?
     let tastedFlavors: [FlavorNote]
@@ -318,6 +374,9 @@ nonisolated struct OwnedBeanSnapshot: Identifiable, Sendable {
         remainingGrams = bean.remainingGrams
         bagWeightGrams = bean.bagWeightGrams
         scanConfidence = bean.scanConfidence
+        grindSize = bean.grindSize
+        grade = bean.grade
+        roasterNotes = bean.roasterNotes
         bagPhotoFilename = bean.bagPhotoFilename
         roastDatePhotoFilename = bean.roastDatePhotoFilename
         tastedFlavors = Array(Set(bean.tastingNotes.flatMap(\.flavorNotes)))

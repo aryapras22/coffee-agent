@@ -159,6 +159,7 @@ struct TasteQuizTool: Tool {
         "Matches a taste preference to Indonesian beans, filtered for moka pot. Call once the user has said how the cup should feel (bright, balanced, or smooth) and which flavor pulls them in."
 
     let store: BeanProfileStore
+    let log: CardLog
 
     @Generable
     struct Arguments {
@@ -186,6 +187,7 @@ struct TasteQuizTool: Tool {
         Log.write(.quiz, "fit \(result.fit.count), marginal on a moka pot \(result.compromised.count)")
 
         if !fit.isEmpty {
+            await log.append(result.fit.prefix(arguments.limit).map { .bean(BeanCard($0)) })
             return QuizOutcome(
                 status: .matchesFound,
                 matches: Array(fit),
@@ -195,6 +197,7 @@ struct TasteQuizTool: Tool {
         }
         if !compromised.isEmpty {
             Log.write(.quiz, "onlyCompromisedMatches, surfacing the compromise rather than an empty answer")
+            await log.append(result.compromised.prefix(arguments.limit).map { .bean(BeanCard($0)) })
             return QuizOutcome(
                 status: .onlyCompromisedMatches,
                 matches: [],

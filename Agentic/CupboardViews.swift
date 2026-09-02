@@ -55,10 +55,10 @@ struct CupboardView: View {
             .sheet(item: $entry) { route in
                 switch route {
                 case .scan:
-                    ScanFlowView(manager: manager)
+                    ScanFlowView(manager: manager) { _ in }
                 case .manual:
                     NavigationStack {
-                        BagDraftForm(manager: manager, draft: BagScanner.Draft(), ocrText: nil) {
+                        BagDraftForm(manager: manager, draft: BagScanner.Draft(), ocrText: nil) { _ in
                             entry = nil
                         }
                     }
@@ -130,6 +130,7 @@ struct BeanDetailView: View {
     let bean: OwnedBean
 
     @State private var capturingRoastDate = false
+    @State private var reviewingId: UUID?
 
     var body: some View {
         List {
@@ -151,9 +152,23 @@ struct BeanDetailView: View {
                 LabelledRow("Roast", bean.roastLevel?.label ?? "Not recorded")
                 LabelledRow("Roasted", bean.roastDate?.formatted(date: .abbreviated, time: .omitted))
                 LabelledRow("Bag", bean.bagWeightGrams.map { "\($0)g" })
+                LabelledRow("Grade", bean.grade)
+                LabelledRow("Grind", bean.grindSize.label)
                 LabelledRow("Provenance", bean.scanConfidence.label)
             }
             .listRowBackground(Theme.paper)
+
+            if !bean.roasterNotes.isEmpty {
+                Section("The roaster's words") {
+                    Text(bean.roasterNotes.joined(separator: ", "))
+                        .font(Theme.reading)
+                        .foregroundStyle(Theme.ink)
+                    Text("Kept as printed. Some of these are cupping attributes rather than flavours, so they are never filed under a flavour note.")
+                        .font(Theme.trace)
+                        .foregroundStyle(Theme.inkMuted)
+                }
+                .listRowBackground(Theme.paper)
+            }
 
             Section("Roast date stamp") {
                 if let stamp = BagPhotoStore.image(named: bean.roastDatePhotoFilename) {
@@ -185,10 +200,24 @@ struct BeanDetailView: View {
                 } else {
                     ForEach(sessions) { session in
                         if session.awaitingReview {
-                            NavigationLink {
-                                BrewReviewView(manager: manager, session: session) {}
+                            // Reviewed in place rather than pushed: the verdict
+                            // is one tap, and a screen transition either way
+                            // costs more than the answer does.
+                            Button {
+                                withAnimation(Theme.enter) {
+                                    reviewingId = reviewingId == session.id ? nil : session.id
+                                }
                             } label: {
                                 BrewRow(session: session)
+                            }
+                            if reviewingId == session.id {
+                                BrewReviewPanel(
+                                    manager: manager,
+                                    session: session,
+                                    onFinish: { _ in reviewingId = nil },
+                                    onClose: { reviewingId = nil }
+                                )
+                                .listRowInsets(EdgeInsets())
                             }
                         } else {
                             BrewRow(session: session)
@@ -271,16 +300,19 @@ struct BagDraftForm: View {
     @State var draft: BagScanner.Draft
     let ocrText: String?
     let photo: UIImage?
-    let onFinish: () -> Void
+    /// Nil when the user cancelled, so a caller that wants to say something
+    /// about the new bag can tell that apart from a bag never saved.
+    let onFinish: (OwnedBean?) -> Void
 
     @State private var hasRoastDate: Bool
+    @State private var roasterNotes: String
 
     init(
         manager: CupboardManager,
         draft: BagScanner.Draft,
         ocrText: String?,
         photo: UIImage? = nil,
-        onFinish: @escaping () -> Void
+        onFinish: @escaping (OwnedBean?) -> Void
     ) {
         self.manager = manager
         self._draft = State(initialValue: draft)
@@ -288,6 +320,7 @@ struct BagDraftForm: View {
         self.photo = photo
         self.onFinish = onFinish
         self._hasRoastDate = State(initialValue: draft.roastDate != nil)
+        self._roasterNotes = State(initialValue: draft.roasterNotes.joined(separator: ", "))
     }
 
     var body: some View {
@@ -327,6 +360,28 @@ struct BagDraftForm: View {
                 }
                 TextField("Bag weight in grams", value: $draft.weightGrams, format: .number)
                     .keyboardType(.numberPad)
+                TextField("Grade as printed", text: $draft.grade)
+            }
+            .listRowBackground(Theme.paperRaised)
+
+            Section {
+                Picker("Sold as", selection: $draft.grindSize) {
+                    ForEach(GrindSize.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+            } footer: {
+                Text(draft.grindSize.isAdjustable
+                    ? "Whole bean, so grind stays a variable the dial-in can move."
+                    : "Pre-ground, so the dial-in will work on heat and timing instead of sending you to a grinder.")
+            }
+            .listRowBackground(Theme.paperRaised)
+
+            Section {
+                TextField("Chocolate, Clean, Balance", text: $roasterNotes, axis: .vertical)
+                    .lineLimit(1...3)
+            } header: {
+                Text("The roaster's words")
+            } footer: {
+                Text("Copied as printed, separated by commas. Cupping words like Clean belong here as much as flavours do.")
             }
             .listRowBackground(Theme.paperRaised)
 
@@ -348,7 +403,7 @@ struct BagDraftForm: View {
                     .foregroundStyle(Theme.ink)
             }
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { onFinish() }.tint(Theme.inkMuted)
+                Button("Cancel") { onFinish(nil) }.tint(Theme.inkMuted)
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") { save() }
@@ -365,10 +420,13 @@ struct BagDraftForm: View {
         var confirmed = draft
         if !hasRoastDate { confirmed.roastDate = nil }
         if confirmed.scanConfidence == .scanUnverified { confirmed.scanConfidence = .scanConfirmed }
-        // The bag is what the user asked to keep; the photo is a bonus that
-        // must not delay the save it belongs to.
-        Task { await manager.add(confirmed, photo: photo) }
-        onFinish()
+        confirmed.roasterNotes = roasterNotes
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        // Saving the photo and matching the corpus both suspend, so the form
+        // reports the bag once it exists rather than before.
+        Task { onFinish(await manager.add(confirmed, photo: photo)) }
     }
 }
 
@@ -377,6 +435,7 @@ struct BagDraftForm: View {
 /// `BagDraftForm` once a draft exists.
 struct ScanFlowView: View {
     let manager: CupboardManager
+    let onSaved: (OwnedBean) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var image: UIImage?
@@ -393,7 +452,10 @@ struct ScanFlowView: View {
     var body: some View {
         NavigationStack {
             if let draft {
-                BagDraftForm(manager: manager, draft: draft, ocrText: ocrText, photo: image) { dismiss() }
+                BagDraftForm(manager: manager, draft: draft, ocrText: ocrText, photo: image) { saved in
+                    if let saved { onSaved(saved) }
+                    dismiss()
+                }
             } else {
                 capture
             }

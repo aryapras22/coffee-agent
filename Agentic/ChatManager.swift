@@ -143,13 +143,43 @@ final class ChatManager {
                     role: message.role == .user ? .user : .agent,
                     text: message.content,
                     steps: message.steps,
-                    places: message.places
+                    places: message.places,
+                    cards: message.cards
                 )
             }
         if let transientFailure, let failureID {
             display.append(DisplayMessage(id: failureID, role: .failure, text: transientFailure))
         }
         return display
+    }
+
+    /// What to offer under the composer. Empty while a turn is in flight, and
+    /// after a user message that got no reply, so the chips never sit under a
+    /// question the agent has not answered.
+    var quickReplies: [String] {
+        guard !isResponding, transientFailure == nil else { return [] }
+        let sorted = chatSession.messages.sorted { $0.timestamp < $1.timestamp }
+        guard let last = sorted.last else { return QuickReplies.opening }
+        guard last.role == .assistant else { return [] }
+        return QuickReplies.following(last.cards)
+    }
+
+    /// A reply the app wrote rather than the model: a bag was saved, a brew
+    /// was logged, a verdict was taken. The facts in it are computed, not
+    /// generated, so nothing here can be a hallucination.
+    ///
+    /// It does not enter the live model transcript. That is deliberate and it
+    /// costs nothing: the cupboard, not the conversation, is what the tools
+    /// read, and the next session rebuild folds this into the recap anyway.
+    func post(_ text: String, cards: [ThreadCard] = []) {
+        let message = ChatMessage(role: .assistant, content: text)
+        message.session = chatSession
+        context.insert(message)
+        chatSession.messages.append(message)
+        message.cards = cards
+        try? context.save()
+        refreshSessions()
+        Log.write(.agent, "posted an app-authored reply, \(cards.count) cards")
     }
 
     func prepareIndex() async {
@@ -173,6 +203,7 @@ final class ChatManager {
         liveSteps = []
         trackSteps(of: modelSession)
         await agent.placeLog.reset()
+        await agent.cardLog.reset()
         defer {
             isResponding = false
             liveSteps = []
@@ -194,7 +225,8 @@ final class ChatManager {
             chatSession.messages.append(assistantMessage)
             assistantMessage.steps = agent.steps(from: response.transcriptEntries)
             assistantMessage.places = await agent.placeLog.places
-            Log.write(.agent, "replied in \(assistantMessage.steps.count) steps, \(assistantMessage.places.count) places")
+            assistantMessage.cards = await agent.cardLog.cards
+            Log.write(.agent, "replied in \(assistantMessage.steps.count) steps, \(assistantMessage.places.count) places, \(assistantMessage.cards.count) cards")
 
             try context.save()
             refreshSessions()

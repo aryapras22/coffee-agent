@@ -157,6 +157,67 @@ nonisolated struct BeanProfile: Codable, Identifiable, Sendable {
     }
 }
 
+/// Links a bag the user owns to a lot in the reference corpus, so the three
+/// way comparison has a published profile to sit beside the roaster's words
+/// and the user's own notes.
+///
+/// Deterministic on purpose. Asking the model which corpus entry a bag is
+/// would produce a different link on different runs from the same label, and
+/// a wrong link is worse than no link: it silently attributes someone else's
+/// cupping score to this bag.
+nonisolated enum BeanMatcher {
+
+    nonisolated struct Match: Sendable {
+        let profile: BeanProfile
+        let score: Int
+        /// The tokens that carried the match, so a card can say why the link
+        /// was made rather than asserting it.
+        let sharedTerms: [String]
+
+        var reason: String { "matched on " + sharedTerms.joined(separator: ", ") }
+    }
+
+    /// Words that appear on nearly every Indonesian bag and in nearly every
+    /// corpus name. Leaving them in would match every lot against every bag.
+    static let ignoredTerms: Set<String> = [
+        "kopi", "coffee", "arabika", "arabica", "robusta", "bean", "beans",
+        "roasters", "roastery", "roasted", "roast", "single", "origin",
+        "premium", "specialty", "the", "and", "of", "grade", "asli", "murni",
+    ]
+
+    static func terms(in text: String) -> Set<String> {
+        let words = text.lowercased().split { !$0.isLetter && !$0.isNumber }
+        return Set(words.map(String.init).filter { $0.count > 2 && !ignoredTerms.contains($0) })
+    }
+
+    /// A shared term is worth more than a shared island, and one is required:
+    /// Sumatra alone covers most of the corpus, so an island-only match would
+    /// link every Sumatran bag to whichever lot happened to sort first.
+    static func best(
+        name: String,
+        subregion: String?,
+        island: Island?,
+        in corpus: [BeanProfile]
+    ) -> Match? {
+        let needle = terms(in: name).union(terms(in: subregion ?? ""))
+        guard !needle.isEmpty else { return nil }
+
+        let scored = corpus.compactMap { profile -> Match? in
+            let shared = needle.intersection(terms(in: profile.name).union(terms(in: profile.subregion)))
+            guard !shared.isEmpty else { return nil }
+            let islandBonus = (island != nil && island == profile.island) ? 1 : 0
+            return Match(profile: profile, score: shared.count * 2 + islandBonus, sharedTerms: shared.sorted())
+        }
+
+        // Ordered fully rather than by score alone, so the same bag and the
+        // same corpus always produce the same link.
+        return scored.max {
+            ($0.score, $0.profile.cuppingScore ?? 0, $1.profile.id)
+                < ($1.score, $1.profile.cuppingScore ?? 0, $0.profile.id)
+        }
+    }
+}
+
 actor BeanProfileStore {
     private let byID: [String: BeanProfile]
     private let all: [BeanProfile]

@@ -16,6 +16,10 @@ nonisolated enum BrewAdvisor {
     nonisolated struct GrindAdvice: Sendable {
         enum Direction: String, Sendable {
             case coarser, finer, hold, unknown
+            /// The fix would have been a grind change, but the bag came
+            /// pre-ground. Distinct from `hold`, which means the grind is
+            /// already right.
+            case constrained
         }
 
         let direction: Direction
@@ -24,24 +28,41 @@ nonisolated enum BrewAdvisor {
 
     /// Established practice is to move only the grind between brews and hold
     /// everything else, which usually lands in two to four attempts.
-    static func nextGrind(from history: [BrewSessionSnapshot]) -> GrindAdvice {
+    static func nextGrind(from history: [BrewSessionSnapshot], grindSize: GrindSize = .wholeBean) -> GrindAdvice {
         let rated = history
             .filter { $0.outcome != nil }
             .sorted { $0.date > $1.date }
 
         guard let last = rated.first, let outcome = last.outcome else {
+            guard grindSize.isAdjustable else {
+                return GrindAdvice(
+                    direction: .constrained,
+                    message: "No rated brews for this bag yet, and it came pre-ground \(grindSize.label.lowercased()), so there is no grind to start from. Hold medium-low heat, pull at the first gurgle, and tell me how it tastes."
+                )
+            }
             return GrindAdvice(
                 direction: .unknown,
                 message: "No rated brews for this bean yet. Start at your usual setting and change nothing else, so the next cup tells you something."
             )
         }
 
-        return advice(for: outcome.symptom, grind: last.grindSetting.isEmpty ? "your last setting" : last.grindSetting)
+        return advice(
+            for: outcome.symptom,
+            grind: last.grindSetting.isEmpty ? "your last setting" : last.grindSetting,
+            grindSize: grindSize
+        )
     }
 
     /// Split out of `nextGrind` so a symptom the user has just described can
     /// reach the same rule table without a logged session to carry it.
-    static func advice(for symptom: BrewSymptom?, grind: String) -> GrindAdvice {
+    static func advice(for symptom: BrewSymptom?, grind: String, grindSize: GrindSize = .wholeBean) -> GrindAdvice {
+        // A pre-ground bag has no grind to move, so the extraction faults have
+        // to be answered with the variables that are left. Sending the user to
+        // a grinder they do not have would cost them several brews chasing
+        // advice they cannot follow.
+        if !grindSize.isAdjustable, let constrained = constrainedAdvice(for: symptom, grindSize: grindSize) {
+            return constrained
+        }
         switch symptom {
         case .bitter, .burnt:
             return GrindAdvice(
@@ -70,6 +91,26 @@ nonisolated enum BrewAdvisor {
                 direction: .hold,
                 message: "\(grind) is working. Lock it in as the baseline for this bean."
             )
+        }
+    }
+
+    /// Nil for the symptoms grind was never the answer to, so those keep the
+    /// bed-prep and hardware advice they already had.
+    static func constrainedAdvice(for symptom: BrewSymptom?, grindSize: GrindSize) -> GrindAdvice? {
+        let preGround = "This bag is pre-ground \(grindSize.label.lowercased()), so grind is not a lever you have."
+        switch symptom {
+        case .bitter, .burnt:
+            return GrindAdvice(
+                direction: .constrained,
+                message: "\(preGround) Drop to low heat, preheat the water, and pull it at the very first gurgle instead. Those are the variables still open to you."
+            )
+        case .sour, .weak:
+            return GrindAdvice(
+                direction: .constrained,
+                message: "\(preGround) Fill the basket completely without packing it, raise the heat slightly, and check the filter plate is clean."
+            )
+        case .balanced, .channeling, .sputtering, .none:
+            return nil
         }
     }
 
@@ -193,6 +234,9 @@ struct BrewAdviceOutcome {
     var advice: String
     var grindDirection: String
     var lastGrindSetting: String?
+    /// False when the bag was bought pre-ground. The model is told never to
+    /// suggest a grind change in that case.
+    var grindAdjustable: Bool
     var ratedBrews: Int
     /// Brews logged against this bean with no verdict yet. Advice rests on the
     /// most recent rated brew, so these are the evidence it is missing.
@@ -219,22 +263,6 @@ struct BrewAdviceTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> BrewAdviceOutcome {
-        // A symptom the user just described beats whatever the history says,
-        // because it is about the cup in front of them.
-        if let reported = arguments.symptom?.symptom {
-            let advice = BrewAdvisor.advice(for: reported, grind: "your current setting")
-            Log.write(.tool, "adviseNextGrind ruleMatched symptom=\(reported.rawValue) direction=\(advice.direction.rawValue)")
-            return BrewAdviceOutcome(
-                status: .ruleMatched,
-                advice: BrewAdvisor.remedy(for: reported)?.fix ?? advice.message,
-                grindDirection: advice.direction.rawValue,
-                lastGrindSetting: nil,
-                ratedBrews: 0,
-                brewsAwaitingReview: 0,
-                cause: BrewAdvisor.remedy(for: reported)?.cause
-            )
-        }
-
         let beans = await cupboard.beans
         let allSessions = await cupboard.sessions
 
@@ -247,6 +275,7 @@ struct BrewAdviceTool: Tool {
                     advice: "There is no bag by that name in the cupboard.",
                     grindDirection: BrewAdvisor.GrindAdvice.Direction.unknown.rawValue,
                     lastGrindSetting: nil,
+                    grindAdjustable: true,
                     ratedBrews: 0,
                     brewsAwaitingReview: 0,
                     cause: nil
@@ -257,18 +286,45 @@ struct BrewAdviceTool: Tool {
             bean = beans.first { $0.id == mostRecent?.beanId }
         }
 
+        // The bag decides whether grind is a lever at all, so it is resolved
+        // before the symptom shortcut rather than after it.
+        let grindSize = bean?.grindSize ?? .wholeBean
+
+        // A symptom the user just described beats whatever the history says,
+        // because it is about the cup in front of them.
+        if let reported = arguments.symptom?.symptom {
+            let advice = BrewAdvisor.advice(for: reported, grind: "your current setting", grindSize: grindSize)
+            Log.write(.tool, "adviseNextGrind ruleMatched symptom=\(reported.rawValue) grind=\(grindSize.rawValue) direction=\(advice.direction.rawValue)")
+            return BrewAdviceOutcome(
+                status: .ruleMatched,
+                // The constrained message names the variables that are left,
+                // so it replaces the generic remedy rather than sitting beside
+                // advice the user cannot act on.
+                advice: advice.direction == .constrained
+                    ? advice.message
+                    : BrewAdvisor.remedy(for: reported)?.fix ?? advice.message,
+                grindDirection: advice.direction.rawValue,
+                lastGrindSetting: nil,
+                grindAdjustable: grindSize.isAdjustable,
+                ratedBrews: 0,
+                brewsAwaitingReview: 0,
+                cause: BrewAdvisor.remedy(for: reported)?.cause
+            )
+        }
+
         let history = allSessions.filter { $0.beanId == bean?.id }
-        let advice = BrewAdvisor.nextGrind(from: history)
+        let advice = BrewAdvisor.nextGrind(from: history, grindSize: grindSize)
         let rated = history.filter { $0.outcome != nil }
-        Log.write(.tool, "adviseNextGrind bean=\(bean?.displayName ?? "none") rated=\(rated.count)/\(history.count) direction=\(advice.direction.rawValue)")
+        Log.write(.tool, "adviseNextGrind bean=\(bean?.displayName ?? "none") grind=\(grindSize.rawValue) rated=\(rated.count)/\(history.count) direction=\(advice.direction.rawValue)")
 
         return BrewAdviceOutcome(
             status: rated.isEmpty ? .noHistoryForBean : .adviceFromHistory,
-            advice: rated.isEmpty
+            advice: rated.isEmpty && grindSize.isAdjustable
                 ? advice.message + " " + BrewAdvisor.startingPoint(for: bean?.roastLevel)
                 : advice.message,
             grindDirection: advice.direction.rawValue,
             lastGrindSetting: rated.sorted { $0.date > $1.date }.first?.grindSetting,
+            grindAdjustable: grindSize.isAdjustable,
             ratedBrews: rated.count,
             brewsAwaitingReview: history.count { $0.outcome == nil },
             cause: rated.first?.outcome.map(\.symptom).flatMap { BrewAdvisor.remedy(for: $0)?.cause }

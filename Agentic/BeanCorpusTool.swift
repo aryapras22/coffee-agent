@@ -45,6 +45,7 @@ struct BeanCorpusTool: Tool {
         "Searches the Indonesian reference corpus by island, growing region, flavor note, processing method, or roast level. Use for beans the user does not necessarily own."
 
     let store: BeanProfileStore
+    let log: CardLog
 
     @Generable
     struct Arguments {
@@ -123,6 +124,7 @@ struct BeanCorpusTool: Tool {
         }
 
         Log.write(.tool, "searchBeanCorpus matchesFound \(profiles.count): \(profiles.map(\.name).joined(separator: ", "))")
+        await log.append(profiles.map { .bean(BeanCard($0)) })
         return BeanSearchOutcome(status: .matchesFound, beans: profiles.map(Self.hit))
     }
 }

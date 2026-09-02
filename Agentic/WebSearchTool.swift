@@ -55,8 +55,12 @@ struct WebSearchTool: Tool {
 
     let apiKey: String?
     let fetcher: URLDataFetching
+    /// Optional so the tool stays constructible without the chat around it,
+    /// which is how the tests exercise it.
+    let cards: CardLog?
 
-    init(apiKey: String?, fetcher: URLDataFetching = URLSession.shared) {
+    init(apiKey: String?, fetcher: URLDataFetching = URLSession.shared, cards: CardLog? = nil) {
+        self.cards = cards
         self.apiKey = apiKey
         self.fetcher = fetcher
     }
@@ -116,6 +120,9 @@ struct WebSearchTool: Tool {
 
         let hits = decoded.results.map { WebSearchHit(title: $0.title, url: $0.url, snippet: $0.content) }
 
+        await cards?.append(
+            hits.map { .seller(SellerCard(name: $0.title, detail: $0.snippet, url: $0.url, source: "via web search")) }
+        )
         return WebSearchOutcome(status: hits.isEmpty ? .noResultsFound : .resultsFound, results: hits)
     }
 }

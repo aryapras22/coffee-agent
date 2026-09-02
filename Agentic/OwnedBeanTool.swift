@@ -65,6 +65,8 @@ struct OwnedBeanTool: Tool {
         "Searches the bags the user actually owns. Use for what is in the cupboard now, what is freshest, what was rated highest, or what has never been brewed."
 
     let cupboard: Cupboard
+    let store: BeanProfileStore
+    let log: CardLog
 
     @Generable
     struct Arguments {
@@ -111,6 +113,13 @@ struct OwnedBeanTool: Tool {
             return OwnedBeanOutcome(status: .noMatchesOwned, beans: [])
         }
         Log.write(.tool, "searchOwnedBeans matchesFound \(matched.count): \(matched.map(\.displayName).joined(separator: ", "))")
+
+        var cards: [ThreadCard] = []
+        for bean in matched {
+            let linked = await bean.corpusReferenceId.asyncFlatMap { await store.profile(id: $0) }
+            cards.append(.owned(OwnedCard(bean, corpusLink: linked?.name)))
+        }
+        await log.append(cards)
 
         return OwnedBeanOutcome(
             status: .matchesFound,
@@ -177,6 +186,113 @@ enum IslandArgument {
     }
 }
 
+@Generable
+enum ComparisonStatus {
+    case compared
+    case beanNotOwned
+    /// The bag has no link into the reference corpus, so there is no published
+    /// profile to compare against. Not the same as the profile disagreeing.
+    case noCorpusLink
+    /// Nothing has been tasted yet, so the third column would be empty.
+    case noTastingNotes
+}
+
+@Generable
+struct ComparisonOutcome {
+    var status: ComparisonStatus
+    var beanName: String
+    var corpusSays: String?
+    var roasterSays: String?
+    var youTasted: String?
+    /// What the reader must not conclude. Roaster copy is marketing prose, and
+    /// some of it names cupping attributes rather than flavours.
+    var caveat: String?
+}
+
+/// Three sources on one bean, left disagreeing. The model is told not to
+/// reconcile them, because the divergence between a published profile, a
+/// roaster's copy and the user's own palate is the answer, not noise in it.
+struct CompareTastingTool: Tool {
+    let name = "compareTastingNotes"
+    let description =
+        "Puts the reference corpus profile, the roaster's printed notes, and what the user actually tasted side by side for one owned bag. Use when the user asks how a bean compares to what it was supposed to taste like."
+
+    let cupboard: Cupboard
+    let store: BeanProfileStore
+    let log: CardLog
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Name of the owned bag to compare. Leave empty for the most recently added one.")
+        var beanName: String?
+    }
+
+    func call(arguments: Arguments) async throws -> ComparisonOutcome {
+        let owned = await cupboard.beans
+        let name = arguments.beanName?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let bean: OwnedBeanSnapshot?
+        if let name, !name.isEmpty {
+            bean = owned.first { $0.displayName.localizedCaseInsensitiveContains(name) }
+        } else {
+            bean = owned.first
+        }
+
+        guard let bean else {
+            Log.write(.tool, "compareTastingNotes beanNotOwned \(name ?? "none")")
+            return ComparisonOutcome(status: .beanNotOwned, beanName: name ?? "", corpusSays: nil, roasterSays: nil, youTasted: nil, caveat: nil)
+        }
+
+        let profile = await bean.corpusReferenceId.asyncFlatMap { await store.profile(id: $0) }
+        let corpusSays = profile?.flavorNotes.map(\.label) ?? []
+        let tasted = bean.tastedFlavors.map(\.label).sorted()
+
+        // Only flagged when there is something to flag: the caveat exists to
+        // explain a row that does not line up, not as boilerplate.
+        let unmappable = bean.roasterNotes.filter { note in
+            !FlavorNote.allCases.contains { $0.label.localizedCaseInsensitiveCompare(note) == .orderedSame }
+        }
+        let caveat = unmappable.isEmpty
+            ? nil
+            : "The roaster's \(unmappable.joined(separator: " and ")) are cupping attributes, not flavours, so they are kept as printed rather than filed under a flavour note."
+
+        await log.append([
+            .comparison(
+                ComparisonCard(
+                    beanName: bean.displayName,
+                    corpusName: profile?.name,
+                    corpusSays: corpusSays,
+                    roasterSays: bean.roasterNotes,
+                    youTasted: tasted,
+                    caveat: caveat
+                )
+            )
+        ])
+
+        let status: ComparisonStatus =
+            profile == nil ? .noCorpusLink : (tasted.isEmpty ? .noTastingNotes : .compared)
+        Log.write(.tool, "compareTastingNotes \(bean.displayName) status=\(status) corpus=\(corpusSays.count) roaster=\(bean.roasterNotes.count) tasted=\(tasted.count)")
+
+        return ComparisonOutcome(
+            status: status,
+            beanName: bean.displayName,
+            corpusSays: corpusSays.joined(separator: ", ").nilWhenEmpty,
+            roasterSays: bean.roasterNotes.joined(separator: ", ").nilWhenEmpty,
+            youTasted: tasted.joined(separator: ", ").nilWhenEmpty,
+            caveat: caveat
+        )
+    }
+}
+
 extension String {
     fileprivate var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+extension Optional {
+    /// `flatMap` cannot take an `async` transform, and both call sites here
+    /// need to reach an actor to resolve a corpus id.
+    fileprivate func asyncFlatMap<T>(_ transform: (Wrapped) async -> T?) async -> T? {
+        guard let self else { return nil }
+        return await transform(self)
+    }
 }

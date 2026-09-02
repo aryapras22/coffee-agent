@@ -36,6 +36,30 @@ struct ScannedBagFields {
 
     @Guide(description: "Net bag weight in grams", .range(10...5000))
     var weightGrams: Int?
+
+    @Guide(description: "Whether the bag holds whole beans or was sold already ground, and how fine. Halus means fine, kasar means coarse.")
+    var grind: GrindArgument?
+
+    @Guide(description: "Quality grade exactly as printed, such as Grade 1 or G1. Leave empty if the label states none.")
+    var grade: String?
+
+    @Guide(description: "The tasting words the roaster printed on the bag, copied one per entry exactly as written. Include cupping words like Clean or Balance, not only flavours.")
+    var roasterNotes: [String]?
+}
+
+@Generable
+enum GrindArgument {
+    case wholeBean, coarse, medium, fine, extraFine
+
+    var size: GrindSize {
+        switch self {
+        case .wholeBean: .wholeBean
+        case .coarse: .coarse
+        case .medium: .medium
+        case .fine: .fine
+        case .extraFine: .extraFine
+        }
+    }
 }
 
 @Generable
@@ -147,6 +171,7 @@ nonisolated enum BagScanner {
     /// the user is least able to correct from memory.
     static let indonesianTerms: [(String, String)] = [
         ("giling basah", "wet hulled"), ("semi basah", "semi washed"),
+        ("ukuran giling", "grind size"), ("halus", "fine"), ("kasar", "coarse"),
         ("cuci penuh", "fully washed"), ("dataran tinggi", "highlands"),
         ("berat bersih", "net weight"), ("tanggal sangrai", "roast date"),
         ("tgl sangrai", "roast date"), ("biji utuh", "whole bean"),
@@ -222,6 +247,20 @@ nonisolated enum BagScanner {
         ]
         draft.roastLevel = roasts.first { normalized.localizedCaseInsensitiveContains($0.0) }?.1
 
+        // Whole bean is the default everywhere else, so only an explicit
+        // grind word moves it. A bag that says nothing is not pre-ground.
+        let grinds: [(String, GrindSize)] = [
+            ("whole bean", .wholeBean), ("extra fine", .extraFine),
+            ("coarse", .coarse), ("fine", .fine),
+        ]
+        if let grind = grinds.first(where: { normalized.localizedCaseInsensitiveContains($0.0) })?.1 {
+            draft.grindSize = grind
+        }
+
+        if let grade = firstMatch("\\bgrade\\s*\\d\\b", in: normalized) {
+            draft.grade = grade.capitalized
+        }
+
         return draft
     }
 
@@ -272,7 +311,7 @@ nonisolated enum BagScanner {
                 """
         )
         let fields = try await session.respond(to: Self.carrier + ocrText, generating: ScannedBagFields.self).content
-        Log.write(.scan, "extracted name=\(fields.name ?? "-") roaster=\(fields.roaster ?? "-") island=\(fields.island.map { "\($0)" } ?? "-") process=\(fields.processing.map { "\($0)" } ?? "-") roast=\(fields.roast.map { "\($0)" } ?? "-") date=\(fields.roastDate ?? "-") weight=\(fields.weightGrams.map(String.init) ?? "-")")
+        Log.write(.scan, "extracted name=\(fields.name ?? "-") roaster=\(fields.roaster ?? "-") island=\(fields.island.map { "\($0)" } ?? "-") process=\(fields.processing.map { "\($0)" } ?? "-") roast=\(fields.roast.map { "\($0)" } ?? "-") date=\(fields.roastDate ?? "-") weight=\(fields.weightGrams.map(String.init) ?? "-") grind=\(fields.grind.map { "\($0)" } ?? "-") grade=\(fields.grade ?? "-") notes=\(fields.roasterNotes?.count ?? 0)")
         return fields
     }
 
@@ -364,6 +403,12 @@ nonisolated enum BagScanner {
         var roastLevel: RoastLevel?
         var roastDate: Date?
         var weightGrams: Int?
+        var grindSize: GrindSize = .wholeBean
+        var grade: String = ""
+        /// Kept as the roaster printed them. Not `FlavorNote`: "Clean" and
+        /// "Balance" are cupping attributes with no flavour to map to, and a
+        /// lossy conversion here would put words in the roaster's mouth.
+        var roasterNotes: [String] = []
         var scanConfidence: ScanConfidence = .userEntered
 
         init() {}
@@ -380,6 +425,11 @@ nonisolated enum BagScanner {
                 Log.write(.failure, "roast date \"\(fields.roastDate ?? "")\" did not parse, left blank for the user")
             }
             weightGrams = fields.weightGrams
+            grindSize = fields.grind?.size ?? .wholeBean
+            grade = fields.grade ?? ""
+            roasterNotes = (fields.roasterNotes ?? [])
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
             // Stays unverified until a human has been through the fields, so
             // a bad scan cannot be compared against the corpus unflagged.
             scanConfidence = .scanUnverified

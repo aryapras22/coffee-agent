@@ -26,6 +26,7 @@ struct DisplayMessage: Identifiable {
     let text: String
     var steps: [AgentStep] = []
     var places: [MappedPlace] = []
+    var cards: [ThreadCard] = []
 }
 
 struct ContentView: View {
@@ -35,21 +36,24 @@ struct ContentView: View {
     @State private var cupboard: CupboardManager?
     @State private var path: [ChatSession] = []
     @State private var sheet: Workbench?
+    /// A panel the user opened, as opposed to one the cupboard is already
+    /// running. Resolved after the live brew and the open review, so starting
+    /// a brew replaces the setup panel with the timer rather than stacking.
+    @State private var panel: Panel?
     @FocusState private var isComposerFocused: Bool
 
-    /// The three things the agent cannot do for you: hold a camera, run a
-    /// live timer, and cover a card before you answer it.
+    /// The two things that have to cover the screen: a camera, and a list you
+    /// delete rows from. Everything else the agent used to hand off to a sheet
+    /// now happens pinned above the composer, in the conversation.
     enum Workbench: String, Identifiable {
-        case cupboard, brew, learn
+        case cupboard, scan
 
         var id: String { rawValue }
     }
 
-    private static let starters = [
-        "Recommend me a bean",
-        "What do I have?",
-        "My coffee tastes bitter",
-    ]
+    enum Panel {
+        case brewSetup
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -80,19 +84,50 @@ struct ContentView: View {
         .task {
             if model == nil, let agent = try? CoffeeAgent() {
                 model = ChatManager(context: modelContext, agent: agent)
-                cupboard = CupboardManager(context: modelContext, cupboard: agent.cupboard)
+                cupboard = CupboardManager(
+                    context: modelContext,
+                    cupboard: agent.cupboard,
+                    profiles: agent.store
+                )
             }
             await model?.prepareIndex()
         }
         .sheet(item: $sheet) { destination in
             if let cupboard {
                 switch destination {
-                case .cupboard: CupboardView(manager: cupboard)
-                case .brew: BrewFlowView(manager: cupboard)
-                case .learn: LearnView()
+                case .cupboard:
+                    CupboardView(manager: cupboard)
+                case .scan:
+                    ScanFlowView(manager: cupboard) { saved in
+                        Task { await announce(saved, cupboard: cupboard) }
+                    }
                 }
             }
         }
+    }
+
+    /// The app speaking, not the model. Everything here is read back off the
+    /// bag that was just written, so the one thing a scan most often gets
+    /// wrong, a silent mismatch against the corpus, is stated rather than
+    /// assumed.
+    private func announce(_ bean: OwnedBean, cupboard: CupboardManager) async {
+        guard let model else { return }
+        let link = await cupboard.corpusName(for: bean)
+
+        var sentences = ["Saved \(bean.displayName)."]
+        sentences.append(link.map { "Linked to \($0) in the corpus." }
+            ?? "Nothing in the corpus matched it, so there is no reference profile to compare against.")
+        if !bean.grindSize.isAdjustable {
+            sentences.append("It is pre-ground \(bean.grindSize.label.lowercased()), so the dial-in will work on heat and timing rather than grind.")
+        }
+        if bean.roastDate == nil {
+            sentences.append("No roast date, so freshness will stay unknown until you add one.")
+        }
+
+        model.post(
+            sentences.joined(separator: " "),
+            cards: [.owned(OwnedCard(OwnedBeanSnapshot(bean), corpusLink: link))]
+        )
     }
 
     /// The saved sessions, as rooms to open. Reads `ChatManager`'s existing
@@ -186,7 +221,17 @@ struct ContentView: View {
     private func chat(for model: ChatManager) -> some View {
         VStack(spacing: 0) {
             transcript(for: model)
+            if let cupboard {
+                pinned(for: model, cupboard: cupboard)
+            }
+            replies(for: model)
             composer(for: model)
+        }
+        .onChange(of: cupboard?.activeBrew?.phase) { _, phase in
+            guard phase == .finished, let cupboard, let timer = cupboard.activeBrew else { return }
+            model.post(
+                "Logged. \(timer.marks.joined(separator: " ")) The coffee is too hot to judge right now, so I have left the review open."
+            )
         }
         // Leaving the room has to take the keyboard with it; the field is
         // gone by then, but the responder is not always released on its own.
@@ -217,19 +262,117 @@ struct ContentView: View {
 
     private var workbenchMenu: some View {
         Menu {
-            Button("Start a brew", systemImage: "timer") { open(.brew) }
+            Button("Start a brew", systemImage: "timer") {
+                Log.write(.ui, "opened the brew setup panel")
+                panel = .brewSetup
+            }
+            Button("Scan a bag", systemImage: "camera") { open(.scan) }
             Button("My cupboard", systemImage: "archivebox") { open(.cupboard) }
-            Button("Flashcards", systemImage: "rectangle.on.rectangle") { open(.learn) }
         } label: {
             Image(systemName: "cup.and.saucer")
         }
         .tint(Theme.accent)
-        .accessibilityLabel("Brew, cupboard and flashcards")
+        .accessibilityLabel("Brew, scan and cupboard")
     }
 
     private func open(_ destination: Workbench) {
         Log.write(.ui, "opened \(destination.rawValue)")
         sheet = destination
+    }
+
+    /// One slot, resolved in order of what is already happening: a review the
+    /// user opened, then a brew already running, then a setup they asked for.
+    /// Sitting between the transcript and the composer rather than over them
+    /// is what lets a three minute brew run while the conversation carries on.
+    @ViewBuilder
+    private func pinned(for model: ChatManager, cupboard: CupboardManager) -> some View {
+        if let session = cupboard.reviewing {
+            BrewReviewPanel(
+                manager: cupboard,
+                session: session,
+                onFinish: { symptom in announce(symptom, for: session, cupboard: cupboard, on: model) },
+                onClose: { cupboard.endReview() }
+            )
+        } else if let timer = cupboard.activeBrew {
+            BrewTimerPanel(
+                timer: timer,
+                onReview: { cupboard.beginReview(of: timer.brewSession) },
+                onDismiss: { cupboard.dismissBrew() }
+            )
+        } else if panel == .brewSetup {
+            BrewSetupPanel(
+                manager: cupboard,
+                onStarted: { panel = nil },
+                onClose: { panel = nil }
+            )
+        }
+    }
+
+    /// The deterministic dial-in, verbatim. The rule table is what makes the
+    /// answer reproducible, so the app quotes it rather than asking the model
+    /// to paraphrase a fixed string.
+    private func announce(
+        _ symptom: BrewSymptom,
+        for session: BrewSession,
+        cupboard: CupboardManager,
+        on model: ChatManager
+    ) {
+        let grindSize = session.bean?.grindSize ?? .wholeBean
+        let advice = BrewAdvisor.advice(
+            for: symptom,
+            grind: session.grindSetting.isEmpty ? "your setting" : session.grindSetting,
+            grindSize: grindSize
+        )
+        model.post("Noted as \(symptom.label.lowercased()). \(advice.message)")
+    }
+
+    /// Tappable answers to whatever the agent last said. When it asked a
+    /// question through `offerChoices` these are its own options; otherwise
+    /// they follow from the cards on screen.
+    @ViewBuilder
+    private func replies(for model: ChatManager) -> some View {
+        let items = model.quickReplies
+        if !items.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: Theme.sm) {
+                    ForEach(items, id: \.self) { reply in
+                        Button {
+                            send(reply, on: model)
+                        } label: {
+                            Text(reply)
+                                .font(Theme.control)
+                                .foregroundStyle(Theme.accent)
+                                .padding(.horizontal, Theme.md)
+                                .padding(.vertical, Theme.sm)
+                                .background(Theme.paper, in: .capsule)
+                                .overlay(Capsule().stroke(Theme.rule, lineWidth: Theme.hairline))
+                        }
+                        .buttonStyle(PressScale())
+                    }
+                }
+                .padding(.horizontal, Theme.md)
+                .padding(.bottom, Theme.sm)
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: 48)
+        }
+    }
+
+    /// A chip naming something the app does rather than something to ask about
+    /// opens that instead of sending it as a question, so "Scan a bag" reaches
+    /// the camera rather than a reply explaining how to.
+    private func send(_ reply: String, on model: ChatManager) {
+        switch reply {
+        case "Scan a bag":
+            open(.scan)
+        case "Start brewing":
+            panel = .brewSetup
+        case "Review my brews":
+            guard let session = cupboard?.awaitingReview.first else { break }
+            cupboard?.beginReview(of: session)
+        default:
+            Task { await model.send(reply) }
+        }
     }
 
     private func transcript(for model: ChatManager) -> some View {
@@ -289,13 +432,13 @@ struct ContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Self.starters, id: \.self) { starter in
+                ForEach(QuickReplies.opening, id: \.self) { starter in
                     Rectangle()
                         .fill(Theme.rule)
                         .frame(height: Theme.hairline)
 
                     Button {
-                        Task { await model.send(starter) }
+                        send(starter, on: model)
                     } label: {
                         HStack {
                             Text(starter)
@@ -468,6 +611,10 @@ private struct MessageRow: View {
 
                 if !message.places.isEmpty {
                     MapPreview(places: message.places)
+                }
+
+                ForEach(message.cards) { card in
+                    ThreadCardView(card: card)
                 }
 
                 if !message.steps.isEmpty {
