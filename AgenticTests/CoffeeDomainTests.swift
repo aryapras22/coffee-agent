@@ -5,6 +5,8 @@
 
 import Foundation
 import Testing
+import UIKit
+import Vision
 
 @testable import Agentic
 
@@ -219,24 +221,85 @@ struct OwnedBeanSearchTests {
 struct BagScanLanguageTests {
     private func language(_ id: String) -> Locale.Language { Locale.Language(identifier: id) }
 
-    @Test("Vision has no Indonesian recogniser, so the scan falls back to English")
-    func indonesianFallsBackToEnglish() {
+    @Test("both languages are requested, Indonesian first, because bags print both")
+    func indonesianLeadsTheOrderedList() {
+        let supported = [language("en-US"), language("id-ID")]
+        let chosen = BagScanner.recognitionLanguages(supported: supported)
+        #expect(chosen.map(\.languageCode) == [language("id").languageCode, language("en").languageCode])
+    }
+
+    @Test("an OS without the Indonesian recogniser still reads the bag in English")
+    func missingIndonesianDegradesRatherThanFails() {
         let supported = [language("en-US"), language("fr-FR")]
         let chosen = BagScanner.recognitionLanguages(supported: supported)
         #expect(chosen.map(\.languageCode) == [language("en-US").languageCode])
     }
 
-    @Test("Indonesian is preferred over English wherever it is available")
-    func indonesianIsPreferredWhenSupported() {
-        let supported = [language("en-US"), language("id-ID")]
-        let chosen = BagScanner.recognitionLanguages(supported: supported)
-        #expect(chosen.first?.languageCode == language("id").languageCode)
-        #expect(chosen.count == 2)
-    }
-
     @Test("an empty supported list still yields a recogniser rather than none")
     func emptySupportedListStillPicksEnglish() {
         #expect(BagScanner.recognitionLanguages(supported: []).count == 1)
+    }
+
+    @Test("this OS carries the Indonesian recogniser at the accurate level")
+    func indonesianIsAvailableHere() {
+        var request = RecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        let codes = request.supportedRecognitionLanguages.map(\.languageCode)
+        #expect(codes.contains(language("id").languageCode))
+    }
+
+    /// `.fast` covers six languages and Indonesian is not among them, so a
+    /// change of recognition level would quietly drop half of a bilingual bag.
+    @Test("the fast recogniser cannot read Indonesian, which is why the scan stays accurate")
+    func fastLevelWouldLoseIndonesian() {
+        var request = RecognizeTextRequest()
+        request.recognitionLevel = .fast
+        let codes = request.supportedRecognitionLanguages.map(\.languageCode)
+        #expect(!codes.contains(language("id").languageCode))
+    }
+}
+
+/// Renders a label panel the way an Indonesian bag prints one, half in each
+/// language, and runs it through the real recogniser. Synthetic type is kinder
+/// than a matte curved bag, so this proves the configuration reads Indonesian
+/// at all, not that any given photograph will.
+@MainActor
+struct BagScanReadingTests {
+    private func labelImage(_ lines: [String]) -> CGImage {
+        let size = CGSize(width: 1000, height: 1300)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 56, weight: .medium),
+                .foregroundColor: UIColor.black,
+            ]
+            for (index, line) in lines.enumerated() {
+                line.draw(at: CGPoint(x: 60, y: 60 + index * 110), withAttributes: attributes)
+            }
+        }
+        return image.cgImage!
+    }
+
+    @Test("Indonesian and English on one panel both come back")
+    func bilingualPanelIsRead() async throws {
+        let image = labelImage([
+            "KOPI ARABIKA GAYO",
+            "Bener Meriah, Aceh",
+            "Proses: Giling Basah",
+            "Single Origin, Whole Bean",
+            "Tanggal Sangrai: 28 Agustus 2026",
+            "Berat Bersih 200 g",
+        ])
+
+        let text = try await BagScanner.readText(from: image).lowercased()
+
+        #expect(text.contains("gayo"))
+        #expect(text.contains("giling"))
+        #expect(text.contains("basah"))
+        #expect(text.contains("agustus"))
+        #expect(text.contains("single origin"))
     }
 }
 

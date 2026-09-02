@@ -81,24 +81,34 @@ nonisolated enum BagScanError: Error, LocalizedError {
 
 nonisolated enum BagScanner {
 
-    /// Terms an English recogniser would otherwise correct into English words.
-    /// Indonesian bags print these on the panel the scan is aimed at.
+    /// Growing regions, roaster words and label headings, in both languages.
+    /// Language correction rewrites what it does not recognise, and a proper
+    /// noun like Bener Meriah is exactly what it would rewrite.
     static let labelVocabulary = [
         "Kopi", "Arabika", "Robusta", "Giling", "Basah", "Sangrai", "Proses",
-        "Gayo", "Aceh", "Mandheling", "Lintong", "Toraja", "Kintamani",
-        "Bajawa", "Flores", "Wamena", "Preanger", "Ijen", "Bener", "Meriah",
+        "Tanggal", "Berat", "Bersih", "Ketinggian", "Varietas", "Petani",
+        "Kebun", "Dataran", "Tinggi", "Diproduksi", "Kemasan", "Biji", "Bubuk",
+        "Gayo", "Aceh", "Takengon", "Mandheling", "Mandailing", "Lintong",
+        "Sidikalang", "Bener", "Meriah", "Toraja", "Kalosi", "Enrekang",
+        "Kintamani", "Bajawa", "Ngada", "Manggarai", "Flores", "Wamena",
+        "Baliem", "Preanger", "Malabar", "Pangalengan", "Ijen", "Bondowoso",
     ]
 
-    /// Vision has no Indonesian recogniser: asking it to detect the language
-    /// makes it find `id`, log that the locale is unsupported, and fall back
-    /// anyway. Indonesian is Latin script, so an English recogniser reads it
-    /// fine, and the vocabulary above stops language correction from
-    /// rewriting the words that matter.
+    /// Both languages, Indonesian first, because a bag prints its origin and
+    /// process in Indonesian and its marketing copy in English. Vision reads
+    /// `recognitionLanguages` as an ordered priority list, so this is the
+    /// bilingual case rather than a choice between the two.
+    ///
+    /// This is why `recognitionLevel` must stay `.accurate`: the `.fast`
+    /// recogniser supports six languages, none of them Indonesian, and
+    /// dropping to it would silently take the Indonesian half away.
     static func recognitionLanguages(supported: [Locale.Language]) -> [Locale.Language] {
         let preferred = [Locale.Language(identifier: "id"), Locale.Language(identifier: "en-US")]
         let available = preferred.filter { candidate in
             supported.contains { $0.languageCode == candidate.languageCode }
         }
+        // An OS without the Indonesian recogniser still reads the bag: the
+        // script is Latin either way, only the correction lexicon is lost.
         return available.isEmpty ? [Locale.Language(identifier: "en-US")] : available
     }
 
@@ -137,7 +147,13 @@ nonisolated enum BagScanner {
                 You are reading text scanned off an Indonesian coffee bag.
                 Fill only the fields the text actually states. Leave a field empty rather than guessing.
                 The text may mix Indonesian and English, and OCR may have garbled it.
-                "Giling basah" is wet-hulled. "Proses" means process. "Sangrai" or "Roasted" precedes the roast date.
+                Indonesian label vocabulary, since most bags mix the two languages on one panel:
+                "kopi" is coffee, "biji" is whole bean, "bubuk" is ground.
+                "proses" is the process. "giling basah" is wet-hulled, "cuci" or "full wash" is washed, "natural" and "honey" are printed in English.
+                "sangrai" is roast, and "tanggal sangrai" or "tgl sangrai" is the roast date. "sangrai medium gelap" is a medium-dark roast; "gelap" is dark, "terang" or "muda" is light.
+                "berat bersih" is net weight. "ketinggian" is altitude. "varietas" is the variety. "petani" is the farmer and "kebun" the estate, neither of which is the roaster.
+                Months: Januari, Februari, Maret, April, Mei, Juni, Juli, Agustus, September, Oktober, November, Desember.
+                Do not translate a place name into English. Bener Meriah, Tana Toraja and Ngada are regions, not descriptions.
                 """
         )
         let fields = try await session.respond(to: ocrText, generating: ScannedBagFields.self).content
