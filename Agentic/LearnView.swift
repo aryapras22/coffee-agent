@@ -74,5 +74,6 @@ struct LearnView: View {
             index = min(max(index + step, 0), cards.count - 1)
             isRevealed = false
         }
+        Log.write(.ui, "flashcard \(index + 1)/\(cards.count) \(cards[index].id)")
     }
 }

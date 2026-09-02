@@ -87,6 +87,7 @@ class CoffeeAgent {
         self.adviceTool = BrewAdviceTool(cupboard: cupboard)
         self.webSearchTool = WebSearchTool(apiKey: loadTavilyKey())
         self.nearbyPlacesTool = NearbyPlacesTool(locationProvider: LocationProvider(), log: placeLog)
+        Log.write(.corpus, "loaded \(profiles.count) profiles from \(resource).json")
     }
 
     static func loadProfiles(resource: String) throws -> [BeanProfile] {
@@ -100,13 +101,15 @@ class CoffeeAgent {
     func indexBeans() async throws {
         let profiles = await store.allProfiles()
         try await BeanIndexer().donate(profiles)
+        Log.write(.corpus, "donated \(profiles.count) profiles to Spotlight")
     }
 
     /// `recap` folds a Chat Session's stored summary and recent messages in
     /// alongside the persona, so a rebuilt session reads as standing context
     /// the model was given up front, not conversation it remembers having.
     func makeSession(recap: String? = nil) -> LanguageModelSession {
-        LanguageModelSession(
+        Log.write(.agent, "session built, 6 tools, recap \(recap == nil ? "none" : "\(recap!.count) chars")")
+        return LanguageModelSession(
             tools: [corpusTool, ownedTool, quizTool, adviceTool, webSearchTool, nearbyPlacesTool],
             instructions: Instructions {
                 Self.personaInstructions

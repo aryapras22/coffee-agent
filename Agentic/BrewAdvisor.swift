@@ -220,6 +220,7 @@ struct BrewAdviceTool: Tool {
         // because it is about the cup in front of them.
         if let reported = arguments.symptom?.symptom {
             let advice = BrewAdvisor.advice(for: reported, grind: "your current setting")
+            Log.write(.tool, "adviseNextGrind ruleMatched symptom=\(reported.rawValue) direction=\(advice.direction.rawValue)")
             return BrewAdviceOutcome(
                 status: .ruleMatched,
                 advice: BrewAdvisor.remedy(for: reported)?.fix ?? advice.message,
@@ -254,6 +255,7 @@ struct BrewAdviceTool: Tool {
         let history = allSessions.filter { $0.beanId == bean?.id }
         let advice = BrewAdvisor.nextGrind(from: history)
         let rated = history.filter { $0.outcome != nil }
+        Log.write(.tool, "adviseNextGrind bean=\(bean?.displayName ?? "none") rated=\(rated.count)/\(history.count) direction=\(advice.direction.rawValue)")
 
         return BrewAdviceOutcome(
             status: rated.isEmpty ? .noHistoryForBean : .adviceFromHistory,

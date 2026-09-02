@@ -65,10 +65,12 @@ final class CupboardManager {
         )
         context.insert(bean)
         save()
+        Log.write(.cupboard, "added \"\(bean.displayName)\" provenance=\(bean.scanConfidence.rawValue) island=\(bean.island?.rawValue ?? "none") roast=\(bean.roastLevel?.rawValue ?? "none")")
         return bean
     }
 
     func delete(_ bean: OwnedBean) {
+        Log.write(.cupboard, "deleted \"\(bean.displayName)\" with \(bean.brewSessions.count) brews")
         context.delete(bean)
         save()
     }
@@ -84,6 +86,7 @@ final class CupboardManager {
         )
         context.insert(session)
         save()
+        Log.write(.brew, "started bean=\(bean?.displayName ?? "none") grind=\(grindSetting.isEmpty ? "unset" : grindSetting) pot=\(potSizeCups)cup heat=\(heatLevel.rawValue)")
         return session
     }
 
@@ -95,11 +98,14 @@ final class CupboardManager {
         if let total { session.totalSeconds = total }
         if let pulledAtGurgle { session.pulledAtGurgle = pulledAtGurgle }
         save()
+        let marks = [firstDrip.map { "firstDrip=\($0)s" }, gurgle.map { "gurgle=\($0)s" }, total.map { "total=\($0)s" }]
+        Log.write(.brew, "recorded \(marks.compactMap { $0 }.joined(separator: " "))")
     }
 
     func finish(_ session: BrewSession, outcome: BrewOutcome) {
         session.outcome = outcome
         save()
+        Log.write(.brew, "finished symptom=\(outcome.symptom?.rawValue ?? "none") rating=\(outcome.rating)/5 grind=\(session.grindSetting.isEmpty ? "unset" : session.grindSetting)")
     }
 
     func addTastingNote(
@@ -122,12 +128,14 @@ final class CupboardManager {
         note.bean = bean
         context.insert(note)
         save()
+        Log.write(.cupboard, "tasting note on \"\(bean.displayName)\" rating=\(rating)/5 flavours=\(flavors.map(\.rawValue).joined(separator: ",").isEmpty ? "none" : flavors.map(\.rawValue).joined(separator: ","))")
     }
 
     private func save() {
         do {
             try context.save()
         } catch {
+            Log.write(.failure, "cupboard save failed: \(error)")
             failure = "Could not save: \(error.localizedDescription)"
         }
         refresh()
@@ -144,6 +152,7 @@ final class CupboardManager {
 
         let beanSnapshots = beans.map(OwnedBeanSnapshot.init)
         let sessionSnapshots = sessions.map(BrewSessionSnapshot.init)
+        Log.write(.store, "pushed \(beanSnapshots.count) bags and \(sessionSnapshots.count) brews to the agent")
         Task { await cupboard.replace(beans: beanSnapshots, sessions: sessionSnapshots) }
     }
 }

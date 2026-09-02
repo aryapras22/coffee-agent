@@ -87,6 +87,7 @@ struct BeanCorpusTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> BeanSearchOutcome {
+        Log.write(.tool, "searchBeanCorpus query=\"\(arguments.query)\" limit=\(arguments.limit)")
         let needle = arguments.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else {
             return BeanSearchOutcome(status: .noMatchesInIndex, beans: [])
@@ -121,6 +122,7 @@ struct BeanCorpusTool: Tool {
             return BeanSearchOutcome(status: .indexStale, beans: [])
         }
 
+        Log.write(.tool, "searchBeanCorpus matchesFound \(profiles.count): \(profiles.map(\.name).joined(separator: ", "))")
         return BeanSearchOutcome(status: .matchesFound, beans: profiles.map(Self.hit))
     }
 }

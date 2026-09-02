@@ -67,14 +67,17 @@ final class BrewTimerModel {
     func advance() {
         switch phase {
         case .heating:
+            Log.write(.brew, "phase heating -> flowing at \(Self.clock(elapsed))")
             manager.record(session, firstDrip: elapsed)
             marks.append("First drip at \(Self.clock(elapsed)). \(BrewAdvisor.firstDripVerdict(seconds: elapsed))")
             phase = .flowing
         case .flowing:
+            Log.write(.brew, "phase flowing -> pullNow at \(Self.clock(elapsed))")
             manager.record(session, gurgle: elapsed, pulledAtGurgle: true)
             marks.append("Gurgle at \(Self.clock(elapsed))")
             phase = .pullNow
         case .pullNow:
+            Log.write(.brew, "phase pullNow -> finished at \(Self.clock(elapsed))")
             manager.record(session, total: elapsed)
             marks.append("Total \(Self.clock(elapsed)). \(BrewAdvisor.totalVerdict(seconds: elapsed))")
             phase = .finished
@@ -85,6 +88,7 @@ final class BrewTimerModel {
     }
 
     func stop() {
+        Log.write(.brew, "timer stopped in phase \(phase) at \(clock)")
         ticker?.cancel()
         ticker = nil
     }

@@ -217,14 +217,19 @@ struct ContentView: View {
 
     private var workbenchMenu: some View {
         Menu {
-            Button("Start a brew", systemImage: "timer") { sheet = .brew }
-            Button("My cupboard", systemImage: "archivebox") { sheet = .cupboard }
-            Button("Flashcards", systemImage: "rectangle.on.rectangle") { sheet = .learn }
+            Button("Start a brew", systemImage: "timer") { open(.brew) }
+            Button("My cupboard", systemImage: "archivebox") { open(.cupboard) }
+            Button("Flashcards", systemImage: "rectangle.on.rectangle") { open(.learn) }
         } label: {
             Image(systemName: "cup.and.saucer")
         }
         .tint(Theme.accent)
         .accessibilityLabel("Brew, cupboard and flashcards")
+    }
+
+    private func open(_ destination: Workbench) {
+        Log.write(.ui, "opened \(destination.rawValue)")
+        sheet = destination
     }
 
     private func transcript(for model: ChatManager) -> some View {

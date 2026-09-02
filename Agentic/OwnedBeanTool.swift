@@ -86,6 +86,7 @@ struct OwnedBeanTool: Tool {
     func call(arguments: Arguments) async throws -> OwnedBeanOutcome {
         let owned = await cupboard.beans
         guard !owned.isEmpty else {
+            Log.write(.tool, "searchOwnedBeans cupboardEmpty")
             return OwnedBeanOutcome(status: .cupboardEmpty, beans: [])
         }
 
@@ -98,10 +99,14 @@ struct OwnedBeanTool: Tool {
             hasRemaining: arguments.onlyWithCoffeeLeft ?? true
         )
 
+        Log.write(.tool, "searchOwnedBeans flavor=\(query.flavorNote?.rawValue ?? "any") island=\(query.island?.rawValue ?? "any") maxDays=\(query.maxDaysSinceRoast.map(String.init) ?? "any") minRating=\(query.minRating.map(String.init) ?? "any") neverBrewed=\(query.neverBrewed) over \(owned.count) bags")
+
         let matched = OwnedBeanSearch.matches(query, in: owned)
         guard !matched.isEmpty else {
+            Log.write(.tool, "searchOwnedBeans noMatchesOwned")
             return OwnedBeanOutcome(status: .noMatchesOwned, beans: [])
         }
+        Log.write(.tool, "searchOwnedBeans matchesFound \(matched.count): \(matched.map(\.displayName).joined(separator: ", "))")
 
         return OwnedBeanOutcome(
             status: .matchesFound,

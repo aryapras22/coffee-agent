@@ -303,6 +303,7 @@ struct BagDraftSheet: View {
     /// Confirming is what promotes a scan from unverified to checked, which is
     /// the only signal downstream has that a human looked at these fields.
     private func save() {
+        Log.write(.ui, "bag confirmed by hand, promoting \(draft.scanConfidence.rawValue)")
         var confirmed = draft
         if !hasRoastDate { confirmed.roastDate = nil }
         if confirmed.scanConfidence == .scanUnverified { confirmed.scanConfidence = .scanConfirmed }
@@ -409,6 +410,7 @@ struct ScanFlowView: View {
                         let data = try? await pickerItem.loadTransferable(type: Data.self),
                         let loaded = UIImage(data: data)
                     else {
+                        Log.write(.failure, "photo library item could not be loaded")
                         failure = "That image could not be loaded."
                         return
                     }
@@ -431,6 +433,7 @@ struct ScanFlowView: View {
             return
         }
 
+        Log.write(.scan, "processing a \(Int(captured.size.width))x\(Int(captured.size.height)) capture")
         failure = nil
         stage = .reading
         do {
@@ -439,9 +442,11 @@ struct ScanFlowView: View {
             stage = .extracting
             draft = BagScanner.Draft(try await BagScanner.extract(from: text))
             stage = .ready
+            Log.write(.scan, "ready for confirmation")
         } catch {
             // A failed read still leaves the manual path open rather than
             // ending the flow, so a bad photo does not cost the user the bag.
+            Log.write(.failure, "scan failed: \(error)")
             stage = .capture
             failure = "\(error.localizedDescription) You can still enter the bag by hand."
         }

@@ -173,6 +173,7 @@ struct TasteQuizTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> QuizOutcome {
+        Log.write(.quiz, "matchTasteProfile feel=\(arguments.feel.branch.rawValue) flavor=\(arguments.flavorPull.note.rawValue) limit=\(arguments.limit)")
         let corpus = await store.allProfiles()
         let result = TasteQuiz.match(
             QuizAnswer(feel: arguments.feel.branch, flavorPull: arguments.flavorPull.note),
@@ -181,6 +182,8 @@ struct TasteQuizTool: Tool {
 
         let fit = result.fit.prefix(arguments.limit).map(BeanCorpusTool.hit)
         let compromised = result.compromised.prefix(arguments.limit).map(BeanCorpusTool.hit)
+
+        Log.write(.quiz, "fit \(result.fit.count), marginal on a moka pot \(result.compromised.count)")
 
         if !fit.isEmpty {
             return QuizOutcome(
@@ -191,6 +194,7 @@ struct TasteQuizTool: Tool {
             )
         }
         if !compromised.isEmpty {
+            Log.write(.quiz, "onlyCompromisedMatches, surfacing the compromise rather than an empty answer")
             return QuizOutcome(
                 status: .onlyCompromisedMatches,
                 matches: [],
@@ -198,6 +202,7 @@ struct TasteQuizTool: Tool {
                 note: "Every bean matching this taste is rated marginal on a moka pot. Bright, high-acidity washed lots are the ones this brewer handles worst. Say so plainly and let the user decide."
             )
         }
+        Log.write(.quiz, "noMatches for that feel and flavour")
         return QuizOutcome(status: .noMatches, matches: [], compromised: [], note: "No bean in the corpus matches that combination.")
     }
 }

@@ -156,6 +156,7 @@ final class ChatManager {
         do {
             try await agent.indexBeans()
         } catch {
+            Log.write(.failure, "bean indexing failed: \(error)")
             failureID = UUID()
             transientFailure = "Could not index beans: \(error)"
         }
@@ -177,6 +178,8 @@ final class ChatManager {
             liveSteps = []
         }
 
+        Log.write(.agent, "send \"\(question)\" context=\(contextUsage.formatted(.percent.precision(.fractionLength(0))))")
+
         let userMessage = ChatMessage(role: .user, content: question)
         userMessage.session = chatSession
         context.insert(userMessage)
@@ -191,6 +194,7 @@ final class ChatManager {
             chatSession.messages.append(assistantMessage)
             assistantMessage.steps = agent.steps(from: response.transcriptEntries)
             assistantMessage.places = await agent.placeLog.places
+            Log.write(.agent, "replied in \(assistantMessage.steps.count) steps, \(assistantMessage.places.count) places")
 
             try context.save()
             refreshSessions()
@@ -203,6 +207,7 @@ final class ChatManager {
             // the context, where a later, unrelated save would flush it.
             try? context.save()
             refreshSessions()
+            Log.write(.failure, "turn failed: \(error)")
             failureID = UUID()
             transientFailure = "\(error)"
         }
@@ -248,7 +253,11 @@ final class ChatManager {
             instructions: "Summarize this conversation in under 80 words. Keep names, decisions, and open questions."
         )
 
-        guard let summary = try? await summarizer.respond(to: transcriptText).content else { return }
+        guard let summary = try? await summarizer.respond(to: transcriptText).content else {
+            Log.write(.failure, "compaction summariser failed, retrying next turn")
+            return
+        }
+        Log.write(.agent, "compacted \(sorted.count) messages into a \(summary.count) character summary")
 
         chatSession.summary = summary
         rebuildSession(recap: Self.recap(for: chatSession, maxRawMessages: Self.maxRawMessages))

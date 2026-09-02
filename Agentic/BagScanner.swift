@@ -112,14 +112,18 @@ nonisolated enum BagScanner {
         request.recognitionLanguages = recognitionLanguages(supported: request.supportedRecognitionLanguages)
         request.customWords = labelVocabulary
 
+        Log.write(.scan, "recognising with \(request.recognitionLanguages.map(\.maximalIdentifier).joined(separator: ", "))")
+
         let observations = try await request.perform(on: image)
         let text = observations
             .compactMap { $0.topCandidates(1).first?.string }
             .joined(separator: "\n")
 
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            Log.write(.failure, "OCR found no text in the image")
             throw BagScanError.noTextFound
         }
+        Log.write(.scan, "read \(observations.count) lines, \(text.count) characters")
         return text
     }
 
@@ -136,7 +140,9 @@ nonisolated enum BagScanner {
                 "Giling basah" is wet-hulled. "Proses" means process. "Sangrai" or "Roasted" precedes the roast date.
                 """
         )
-        return try await session.respond(to: ocrText, generating: ScannedBagFields.self).content
+        let fields = try await session.respond(to: ocrText, generating: ScannedBagFields.self).content
+        Log.write(.scan, "extracted name=\(fields.name ?? "-") roaster=\(fields.roaster ?? "-") island=\(fields.island.map { "\($0)" } ?? "-") process=\(fields.processing.map { "\($0)" } ?? "-") roast=\(fields.roast.map { "\($0)" } ?? "-") date=\(fields.roastDate ?? "-") weight=\(fields.weightGrams.map(String.init) ?? "-")")
+        return fields
     }
 
     /// Accepts what the model returned as well as the formats a label prints,
@@ -184,6 +190,9 @@ nonisolated enum BagScanner {
             processingMethod = fields.processing?.method
             roastLevel = fields.roast?.level
             roastDate = BagScanner.parseDate(fields.roastDate)
+            if fields.roastDate != nil, roastDate == nil {
+                Log.write(.failure, "roast date \"\(fields.roastDate ?? "")\" did not parse, left blank for the user")
+            }
             weightGrams = fields.weightGrams
             // Stays unverified until a human has been through the fields, so
             // a bad scan cannot be compared against the corpus unflagged.
