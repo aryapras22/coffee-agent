@@ -1,8 +1,6 @@
 //
-//  CoffeeTools.swift
+//  BeanCorpusTool.swift
 //  Agentic
-//
-//  Created by Arya on 27/08/26.
 //
 
 import CoreSpotlight
@@ -19,10 +17,18 @@ enum BeanSearchStatus {
 @Generable
 struct BeanHit {
     var name: String
-    var origin: String
-    var roastLevel: String
+    var island: String
+    var subregion: String
+    var processing: String
     var flavors: String
-    var pricePer100gUSD: Double?
+    var acidity: String
+    var body: String
+    /// Nil where the corpus has no verified recommendation, which is every
+    /// Papua lot. The model is told to say so rather than fill the gap.
+    var roastRecommendation: String?
+    var mokaPotSuitability: String
+    var cuppingScore: Double?
+    var dataSource: String
 }
 
 @Generable
@@ -31,16 +37,18 @@ struct BeanSearchOutcome {
     var beans: [BeanHit]
 }
 
-struct BeanSearchTool: Tool {
-    let name = "searchBeanIndex"
+/// The reference corpus. An empty result here means no such Indonesian lot is
+/// known, which is a different answer from `OwnedBeanTool` coming back empty.
+struct BeanCorpusTool: Tool {
+    let name = "searchBeanCorpus"
     let description =
-        "Searches the indexed bean collection by flavor note, origin, roast level, or process."
+        "Searches the Indonesian reference corpus by island, growing region, flavor note, processing method, or roast level. Use for beans the user does not necessarily own."
 
-    let store: BeanStore
+    let store: BeanProfileStore
 
     @Generable
     struct Arguments {
-        @Guide(description: "Flavor note, origin, roast level, or process to search for")
+        @Guide(description: "Island, growing region, flavor note, processing method, or roast level")
         var query: String
 
         @Guide(description: "How many beans to return", .range(1...5))
@@ -62,6 +70,22 @@ struct BeanSearchTool: Tool {
             .joined(separator: " && ")
     }
 
+    static func hit(for profile: BeanProfile) -> BeanHit {
+        BeanHit(
+            name: profile.name,
+            island: profile.island.label,
+            subregion: profile.subregion,
+            processing: profile.processingMethod.label,
+            flavors: profile.flavorNotes.map(\.label).joined(separator: ", "),
+            acidity: profile.acidity.label,
+            body: profile.body.label,
+            roastRecommendation: profile.roastRecommendation?.label,
+            mokaPotSuitability: profile.mokaPotSuitability.label,
+            cuppingScore: profile.cuppingScore,
+            dataSource: profile.dataSource.label
+        )
+    }
+
     func call(arguments: Arguments) async throws -> BeanSearchOutcome {
         let needle = arguments.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else {
@@ -72,13 +96,11 @@ struct BeanSearchTool: Tool {
             return BeanSearchOutcome(status: .indexUnavailable, beans: [])
         }
 
-        let queryString = Self.spotlightQuery(for: needle)
-
         let context = CSSearchQueryContext()
         context.fetchAttributes = []
 
         var ids: [String] = []
-        let query = CSSearchQuery(queryString: queryString, queryContext: context)
+        let query = CSSearchQuery(queryString: Self.spotlightQuery(for: needle), queryContext: context)
         defer { query.cancel() }
 
         do {
@@ -94,22 +116,11 @@ struct BeanSearchTool: Tool {
             return BeanSearchOutcome(status: .noMatchesInIndex, beans: [])
         }
 
-        let beans = await store.beans(for: ids)
-        guard !beans.isEmpty else {
+        let profiles = await store.profiles(for: ids)
+        guard !profiles.isEmpty else {
             return BeanSearchOutcome(status: .indexStale, beans: [])
         }
 
-        return BeanSearchOutcome(
-            status: .matchesFound,
-            beans: beans.map { bean in
-                BeanHit(
-                    name: bean.name,
-                    origin: bean.origin_countries.joined(separator: ", "),
-                    roastLevel: bean.roast_level ?? "unknown",
-                    flavors: bean.flavor_tags.joined(separator: ", "),
-                    pricePer100gUSD: bean.price_per_100g_usd
-                )
-            }
-        )
+        return BeanSearchOutcome(status: .matchesFound, beans: profiles.map(Self.hit))
     }
 }
