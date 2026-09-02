@@ -11,6 +11,7 @@
 		2F58E8FD29FB4F22F83C1590 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E570D80B3BF2E692D53DC4DA /* Foundation.framework */; };
 		42BF22233045919000EF0361 /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 42BF22223045919000EF0361 /* .gitignore */; };
 		D57CFE71B3D16853FA1E7BA0 /* NearbyPlacesToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF3C782B85BD9B94D2E64FDF /* NearbyPlacesToolTests.swift */; };
+		7C1D4A0E5B3F210094ADCE02 /* CoffeeDomainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1D4A0E5B3F210094ADCE01 /* CoffeeDomainTests.swift */; };
 		E5AC6247551EE763F7C20279 /* ChatManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 972434CB16E5B6DD003257BE /* ChatManagerTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -31,6 +32,7 @@
 		6E378D3D43093F9977A585FD /* CoffeeAgentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CoffeeAgentTests.swift; path = AgenticTests/CoffeeAgentTests.swift; sourceTree = "<group>"; };
 		70A5EB0E8B14FE49CB170AC5 /* WebSearchToolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WebSearchToolTests.swift; path = AgenticTests/WebSearchToolTests.swift; sourceTree = "<group>"; };
 		972434CB16E5B6DD003257BE /* ChatManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ChatManagerTests.swift; path = AgenticTests/ChatManagerTests.swift; sourceTree = "<group>"; };
+		7C1D4A0E5B3F210094ADCE01 /* CoffeeDomainTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CoffeeDomainTests.swift; path = AgenticTests/CoffeeDomainTests.swift; sourceTree = "<group>"; };
 		A11CF6900000000000000001 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 		DF3C782B85BD9B94D2E64FDF /* NearbyPlacesToolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NearbyPlacesToolTests.swift; path = AgenticTests/NearbyPlacesToolTests.swift; sourceTree = "<group>"; };
 		E570D80B3BF2E692D53DC4DA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -87,6 +89,7 @@
 		667E05517051E5D30CCDC1B9 /* AgenticTests */ = {
 			isa = PBXGroup;
 			children = (
+				7C1D4A0E5B3F210094ADCE01 /* CoffeeDomainTests.swift */,
 				70A5EB0E8B14FE49CB170AC5 /* WebSearchToolTests.swift */,
 				DF3C782B85BD9B94D2E64FDF /* NearbyPlacesToolTests.swift */,
 				6E378D3D43093F9977A585FD /* CoffeeAgentTests.swift */,
@@ -213,6 +216,7 @@
 				16041ACC41DAD657099C86D0 /* WebSearchToolTests.swift in Sources */,
 				D57CFE71B3D16853FA1E7BA0 /* NearbyPlacesToolTests.swift in Sources */,
 				E5AC6247551EE763F7C20279 /* ChatManagerTests.swift in Sources */,
+				7C1D4A0E5B3F210094ADCE02 /* CoffeeDomainTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -390,8 +394,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Agentic-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Coffee Agent";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agentic uses your location to find cafes and coffee shops near you.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Coffee Agent uses the camera to read the label on a coffee bag.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agentic uses your location to find cafes and coffee shops near you.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -426,8 +430,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Agentic-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Coffee Agent";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agentic uses your location to find cafes and coffee shops near you.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Coffee Agent uses the camera to read the label on a coffee bag.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agentic uses your location to find cafes and coffee shops near you.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
