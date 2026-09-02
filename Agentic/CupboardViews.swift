@@ -323,6 +323,7 @@ struct ScanFlowView: View {
     @State private var draft: BagScanner.Draft?
     @State private var failure: String?
     @State private var showingCamera = false
+    @State private var pendingImage: UIImage?
     @State private var pickerItem: PhotosPickerItem?
 
     private enum Stage { case capture, reading, extracting, ready }
@@ -386,10 +387,14 @@ struct ScanFlowView: View {
                     Button("Cancel") { dismiss() }.tint(Theme.inkMuted)
                 }
             }
-            .fullScreenCover(isPresented: $showingCamera) {
+            // Processing waits for the camera to finish dismissing. Starting it
+            // from `onCapture` sets `draft` while the cover is still on screen,
+            // and the confirm sheet then tries to present from a view that is
+            // no longer in the window hierarchy.
+            .fullScreenCover(isPresented: $showingCamera, onDismiss: processPendingCapture) {
                 CameraPicker { captured in
                     image = captured
-                    Task { await process(captured) }
+                    pendingImage = captured
                 }
                 .ignoresSafeArea()
             }
@@ -412,6 +417,12 @@ struct ScanFlowView: View {
                 }
             }
         }
+    }
+
+    private func processPendingCapture() {
+        guard let pendingImage else { return }
+        self.pendingImage = nil
+        Task { await process(pendingImage) }
     }
 
     private func process(_ captured: UIImage) async {

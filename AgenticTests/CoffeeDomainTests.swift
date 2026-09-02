@@ -216,6 +216,30 @@ struct OwnedBeanSearchTests {
     }
 }
 
+struct BagScanLanguageTests {
+    private func language(_ id: String) -> Locale.Language { Locale.Language(identifier: id) }
+
+    @Test("Vision has no Indonesian recogniser, so the scan falls back to English")
+    func indonesianFallsBackToEnglish() {
+        let supported = [language("en-US"), language("fr-FR")]
+        let chosen = BagScanner.recognitionLanguages(supported: supported)
+        #expect(chosen.map(\.languageCode) == [language("en-US").languageCode])
+    }
+
+    @Test("Indonesian is preferred over English wherever it is available")
+    func indonesianIsPreferredWhenSupported() {
+        let supported = [language("en-US"), language("id-ID")]
+        let chosen = BagScanner.recognitionLanguages(supported: supported)
+        #expect(chosen.first?.languageCode == language("id").languageCode)
+        #expect(chosen.count == 2)
+    }
+
+    @Test("an empty supported list still yields a recogniser rather than none")
+    func emptySupportedListStillPicksEnglish() {
+        #expect(BagScanner.recognitionLanguages(supported: []).count == 1)
+    }
+}
+
 struct BagScanDateTests {
     private func day(_ date: Date?) -> DateComponents? {
         date.map { Calendar.current.dateComponents([.year, .month, .day], from: $0) }

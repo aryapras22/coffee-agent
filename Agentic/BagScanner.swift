@@ -81,13 +81,36 @@ nonisolated enum BagScanError: Error, LocalizedError {
 
 nonisolated enum BagScanner {
 
+    /// Terms an English recogniser would otherwise correct into English words.
+    /// Indonesian bags print these on the panel the scan is aimed at.
+    static let labelVocabulary = [
+        "Kopi", "Arabika", "Robusta", "Giling", "Basah", "Sangrai", "Proses",
+        "Gayo", "Aceh", "Mandheling", "Lintong", "Toraja", "Kintamani",
+        "Bajawa", "Flores", "Wamena", "Preanger", "Ijen", "Bener", "Meriah",
+    ]
+
+    /// Vision has no Indonesian recogniser: asking it to detect the language
+    /// makes it find `id`, log that the locale is unsupported, and fall back
+    /// anyway. Indonesian is Latin script, so an English recogniser reads it
+    /// fine, and the vocabulary above stops language correction from
+    /// rewriting the words that matter.
+    static func recognitionLanguages(supported: [Locale.Language]) -> [Locale.Language] {
+        let preferred = [Locale.Language(identifier: "id"), Locale.Language(identifier: "en-US")]
+        let available = preferred.filter { candidate in
+            supported.contains { $0.languageCode == candidate.languageCode }
+        }
+        return available.isEmpty ? [Locale.Language(identifier: "en-US")] : available
+    }
+
     /// One image at a time, deliberately. Running more than two
     /// `RecognizeTextRequest` operations concurrently can deadlock Vision, and
     /// there is no reason here to scan bags in parallel.
     static func readText(from image: CGImage) async throws -> String {
         var request = RecognizeTextRequest()
         request.recognitionLevel = .accurate
-        request.automaticallyDetectsLanguage = true
+        request.automaticallyDetectsLanguage = false
+        request.recognitionLanguages = recognitionLanguages(supported: request.supportedRecognitionLanguages)
+        request.customWords = labelVocabulary
 
         let observations = try await request.perform(on: image)
         let text = observations
