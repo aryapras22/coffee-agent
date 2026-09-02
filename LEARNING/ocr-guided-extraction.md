@@ -1,53 +1,65 @@
-# Reading a coffee bag: OCR into guided generation
+# Reading an Indonesian coffee bag
 
 ## What this introduces
 
-A two-stage extraction pipeline that turns a photograph into typed fields, with a mandatory human confirmation between the machine and the store. Stage one is Vision's `RecognizeTextRequest`, which returns flat lines of recognised text. Stage two is Foundation Models guided generation, which reads those lines and fills a `@Generable` struct. `BagScanner` holds both stages; `ScanFlowView` runs them and hands the result to `BagDraftSheet`, which is the only path that writes an `OwnedBean`.
+A pipeline that turns a photograph of a bag into typed fields, across a language the on-device model cannot read. Vision's `RecognizeTextRequest` recognises the label, a term substitution pass rewrites the Indonesian vocabulary as English, Foundation Models guided generation fills a `@Generable` struct, and a human confirms every field before anything is stored. `BagScanner` holds the stages; `ScanFlowView` runs them; `BagDraftSheet` is the only path that writes an `OwnedBean`.
+
+## The constraint that shapes everything
+
+The two frameworks do not support the same languages, and the gap is the whole problem.
+
+Vision recognises Indonesian: `id-Latn-ID` is in `supportedRecognitionLanguages` at the `.accurate` level, among thirty. Foundation Models supports twenty-three locales and Indonesian is not one of them. So OCR reads the bag perfectly and then hands text to a model that refuses it with `GenerationError.unsupportedLanguageOrLocale`, before generating anything.
+
+Worse, the refusal is probabilistic over the whole prompt, not a lookup. Measured on one panel: the label lines alone pass, the place names alone pass, the two together fail. Terse lines carry weak language signal, and a few Indonesian proper nouns tip the aggregate.
 
 ## Why this and not the alternatives
 
 Typing a bag in by hand is six fields of transcription from packaging that already states all six. That is the baseline to beat.
 
-A pure regex pass over the OCR text is deterministic and free, and it works for the formatted fields: a weight is a number next to `g`, a date is a date. It fails on prose. "Proses: Giling Basah" and "Semi-washed, dried in parchment" name the same method, and no reasonable set of patterns covers how a roaster writes it. A regex pre-pass in front of the model was rejected: it would not remove the confirm screen, and it adds a second extraction path that can disagree with the first.
+The first design rejected a regex pre-pass, reasoning that it would not remove the confirm screen and would add a second extraction path that could disagree with the first. That reasoning assumed the model could read the text. It cannot, so the pre-pass is not an optional second path; it is what lets the first one run at all.
 
-A vision-language model reading the photograph directly would skip the OCR stage entirely. Foundation Models on device is text-in, text-out, so that option needs a server round trip the rest of the app does not.
+Three layers, each earning its place against the measured failure:
 
-The cost is that the model can hallucinate a field the bag never printed. That is what the `@Guide` descriptions and the optional field types are for, and why the confirm screen is not polish.
+An English **carrier** wraps the label text in two sentences of ordinary prose. This alone is enough to make the classifier accept the panel, and it is the difference between a throw and a result.
+
+**Term normalisation** rewrites the closed label vocabulary into English, so the model reads words it was trained on rather than ones it must guess at, and so the aggregate leans further from Indonesian. It covers field labels and their values only.
+
+**Deterministic fallback** reads process, roast, date and weight off that same vocabulary. The classifier is probabilistic, so a bag with more Indonesian than the test panel may still be refused; the fallback lands the user on a prefilled form rather than a dead end. `draft(fromOCR:)` never throws.
+
+The cost is that the model can still invent a field the bag never printed. That is what the optional field types and the confirm screen are for.
 
 ## How the logic works
 
-`BagScanner.readText(from:)` builds a `RecognizeTextRequest`, sets `recognitionLevel` to `.accurate`, turns `automaticallyDetectsLanguage` off, and sets `recognitionLanguages` to Indonesian then English, then awaits `perform(on:)`. Each `RecognizedTextObservation` carries ranked candidate strings; taking `topCandidates(1).first` and joining with newlines gives one block of text in roughly reading order. Empty text throws rather than returning an empty string, because an empty prompt would make the model invent a whole bag.
+`readText(from:)` sets `.accurate`, turns `automaticallyDetectsLanguage` off, sets `recognitionLanguages` to Indonesian then English, and supplies the growing regions as `customWords`. Each observation's top candidate is joined into one block in reading order. Empty text throws, because an empty prompt would make the model invent a whole bag.
 
-`BagScanner.extract(from:)` opens a fresh `LanguageModelSession` whose instructions state the domain (an Indonesian coffee bag), the vocabulary (giling basah is wet-hulled, proses means process), and one standing rule: leave a field empty rather than guess. It then calls `respond(to:generating: ScannedBagFields.self)`. Guided generation constrains decoding to the schema, so the reply is a value of that type rather than JSON to parse and validate.
+`normalize(_:)` applies an ordered table of substitutions, longest phrase first so "berat bersih" is not half-consumed by "berat". Only field labels and values are in it. Place names are absent because they are proper nouns, and so are `kopi`, `biji` and `bubuk`: a bag named KOPI ARABIKA GAYO is not named "coffee ARABIKA GAYO", and translating those corrupted the one field a user is least able to correct from memory.
 
-Every field on `ScannedBagFields` is optional. A bag with no roast date is ordinary, and an optional is how the schema says "this may be absent" to the model as well as to the caller.
+`extract(from:)` prepends the carrier, opens a session whose instructions contain no Indonesian at all, and calls `respond(to:generating:)`. Guided generation constrains decoding to the schema, so the reply is a typed value rather than JSON to parse.
 
-`BagScanner.Draft(_:)` maps the generated value onto the form's shape, parses the date through `parseDate`, and sets `scanConfidence` to `.scanUnverified`. `BagDraftSheet.save()` promotes that to `.scanConfirmed`. Nothing else writes either value, so the confidence is exactly a record of whether a human looked.
+`Draft(_:)` parses the date through `parseDate` and sets `scanConfidence` to `.scanUnverified`. `BagDraftSheet.save()` promotes it to `.scanConfirmed`. Nothing else writes either value, so the confidence is exactly a record of whether a human looked.
 
 ## Terminology
 
-**Guided generation**: constraining decoding to a schema so the output is a typed value by construction, not a string that happens to parse. Foundation Models drives this from the `@Generable` macro and the `@Guide` descriptions.
+**Guided generation**: constraining decoding to a schema so the output is a typed value by construction. Driven by the `@Generable` macro and `@Guide` descriptions.
 
-**Recognition level**: Vision's tradeoff between a fast recogniser and a slower, more accurate one. `.accurate` is the right default for a still photograph; `.fast` exists for video frames. The two do not cover the same languages: `.fast` recognises six, all Western European, while `.accurate` recognises thirty including Indonesian. Changing the level here would quietly drop half of a bilingual bag, which is why a test asserts the difference rather than a comment describing it.
+**Recognition level**: `.accurate` recognises thirty languages including Indonesian; `.fast` recognises six, all Western European. Changing the level would silently drop half of a bilingual bag, so a test asserts the gap rather than a comment describing it.
 
-**Candidate**: Vision returns several possible readings per observation, ranked by confidence. Taking the top one is the usual choice.
-
-**Custom words**: a supplementary lexicon for language correction. Correction rewrites strings it does not recognise, and Indonesian growing regions are exactly the proper nouns it would rewrite, so Bener Meriah and Tana Toraja are supplied explicitly.
+**Custom words**: a supplementary lexicon for language correction, which rewrites what it does not recognise. Bener Meriah is exactly what it would rewrite.
 
 ## Pitfalls
 
-Running more than two `RecognizeTextRequest` operations concurrently can deadlock Vision. Scan one image at a time. There is no reason to batch here, but a future "scan the whole shelf" feature would hit this.
+Running more than two `RecognizeTextRequest` operations concurrently can deadlock Vision. Scan one image at a time.
 
-`automaticallyDetectsLanguage` is the wrong tool for a bilingual label. Detection picks one language for the image, and an Indonesian bag prints its origin and process in Indonesian and its marketing copy in English, so whichever it picks loses the other half. `recognitionLanguages` takes an ordered list, so asking for both is the bilingual case rather than a choice between them.
+`automaticallyDetectsLanguage` is wrong for a bilingual label: it picks one language for the image, and a bag prints its origin in Indonesian and its marketing copy in English, so whichever it picks loses the other half. `recognitionLanguages` takes an ordered list, so asking for both is the bilingual case rather than a choice.
 
-No language setting makes OCR reliable on the physical object. Coffee bags are matte, curved, and often print dark on dark. Misreads are the normal case, not the failure case, which is why the confirm screen is a step in the pipeline rather than a nicety.
+No setting makes OCR reliable on the physical object. Bags are matte, curved, and often dark on dark. Misreads are the normal case, which is why the confirm screen is a step in the pipeline rather than a nicety.
 
-A date returned as `yyyy-MM-dd` is the happy path, but the model sometimes copies the printed form through unchanged. `parseDate` tries several formats under both `en_US_POSIX` and `id_ID`, and returns nil rather than defaulting to today. A silently wrong roast date poisons every freshness answer afterwards.
+A date returned as `yyyy-MM-dd` is the happy path, but the model sometimes copies the printed form through. `parseDate` tries several formats under `en_US_POSIX` and `id_ID` and returns nil rather than today. A silently wrong roast date poisons every freshness answer afterwards.
 
-Confidence tracking only works if it is honest. Promoting `.scanUnverified` to `.scanConfirmed` anywhere but the confirm action makes the flag meaningless, and the agent's instructions depend on it to know when to hedge.
+Confidence tracking only works if it is honest. Promoting `.scanUnverified` anywhere but the confirm action makes the flag meaningless, and the agent's instructions depend on it to know when to hedge.
 
 ## Further reading
 
-- Vision: `RecognizeTextRequest` and `RecognizedTextObservation`, https://developer.apple.com/documentation/vision/recognizetextrequest
-- Vision: reading documents with structure, `RecognizeDocumentsRequest`, https://developer.apple.com/documentation/vision/recognizedocumentsrequest
-- Foundation Models: generating Swift data structures with guided generation, https://developer.apple.com/documentation/foundationmodels/generating-swift-data-structures-with-guided-generation
+- Vision: `RecognizeTextRequest`, https://developer.apple.com/documentation/vision/recognizetextrequest
+- Foundation Models: `LanguageModelSession.GenerationError`, https://developer.apple.com/documentation/foundationmodels/languagemodelsession/generationerror
+- Foundation Models: guided generation, https://developer.apple.com/documentation/foundationmodels/generating-swift-data-structures-with-guided-generation

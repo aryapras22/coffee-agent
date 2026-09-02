@@ -16,7 +16,7 @@ struct ScannedBagFields {
     @Guide(description: "The coffee's name as printed, without the roaster's company name")
     var name: String?
 
-    @Guide(description: "The roaster or company that packed the bag")
+    @Guide(description: "The roaster or company that packed the bag. Leave empty if the label names no company, and never fall back to the region or the estate.")
     var roaster: String?
 
     @Guide(description: "Indonesian island of origin, if the label names one")
@@ -137,26 +137,141 @@ nonisolated enum BagScanner {
         return text
     }
 
-    /// Guided generation straight off the OCR text, with no regex pre-pass.
-    /// The confirm screen is what catches a misread, so a second extraction
-    /// path would add a place for the two to disagree without removing the
-    /// need to check.
+    /// Indonesian label terms, longest phrase first so "berat bersih" is not
+    /// half-consumed by "berat".
+    ///
+    /// Only field labels and their values are here. Place names are absent
+    /// because they are proper nouns, and so are the product words `kopi`,
+    /// `biji` and `bubuk`: a bag named KOPI ARABIKA GAYO is not named
+    /// "coffee ARABIKA GAYO", and translating them corrupted the one field
+    /// the user is least able to correct from memory.
+    static let indonesianTerms: [(String, String)] = [
+        ("giling basah", "wet hulled"), ("semi basah", "semi washed"),
+        ("cuci penuh", "fully washed"), ("dataran tinggi", "highlands"),
+        ("berat bersih", "net weight"), ("tanggal sangrai", "roast date"),
+        ("tgl sangrai", "roast date"), ("biji utuh", "whole bean"),
+        ("proses", "process"), ("cuci", "washed"), ("alami", "natural"),
+        ("madu", "honey"), ("sangrai", "roast"), ("tanggal", "date"),
+        ("tgl", "date"), ("gelap", "dark"), ("terang", "light"),
+        ("muda", "light"), ("sedang", "medium"), ("berat", "weight"),
+        ("ketinggian", "altitude"), ("varietas", "variety"),
+        ("petani", "farmer"), ("kebun", "estate"), ("kemasan", "packaged"),
+        ("diproduksi", "produced"), ("ketinggian", "altitude"),
+        ("Januari", "January"), ("Februari", "February"), ("Maret", "March"),
+        ("Mei", "May"), ("Juni", "June"), ("Juli", "July"),
+        ("Agustus", "August"), ("Oktober", "October"), ("Desember", "December"),
+    ]
+
+    /// Foundation Models does not support Indonesian: handed an Indonesian
+    /// prompt it throws `unsupportedLanguageOrLocale` before generating
+    /// anything. Substituting the label vocabulary leaves the proper nouns
+    /// alone and turns the rest into the English the model does read.
+    ///
+    /// This is the regex pre-pass the first design rejected. That decision
+    /// assumed the model could read the text; it cannot, so the pre-pass is
+    /// not an optional second path, it is what makes the first one run.
+    static func normalize(_ text: String) -> String {
+        indonesianTerms.reduce(text) { partial, pair in
+            partial.replacingOccurrences(
+                of: "\\b" + NSRegularExpression.escapedPattern(for: pair.0) + "\\b",
+                with: pair.1,
+                options: [.regularExpression, .caseInsensitive]
+            )
+        }
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> String? {
+        guard let range = text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) else {
+            return nil
+        }
+        return String(text[range])
+    }
+
+    /// What the closed label vocabulary yields on its own. Not a replacement
+    /// for guided generation, which is what reads the layout and picks the
+    /// coffee's name out of the roaster's marketing copy. This is the floor
+    /// the user lands on when the model refuses the text outright.
+    static func deterministicFields(from normalized: String) -> Draft {
+        var draft = Draft()
+        draft.scanConfidence = .scanUnverified
+
+        if let weight = firstMatch("\\b\\d{2,4}\\s*(?:g|gr|gram|grams)\\b", in: normalized) {
+            draft.weightGrams = Int(weight.filter(\.isNumber))
+        }
+
+        for pattern in ["\\b\\d{1,2}\\s+[A-Za-z]+\\s+\\d{4}\\b", "\\b\\d{4}-\\d{2}-\\d{2}\\b", "\\b\\d{1,2}/\\d{1,2}/\\d{4}\\b"] {
+            if let found = firstMatch(pattern, in: normalized), let date = parseDate(found) {
+                draft.roastDate = date
+                break
+            }
+        }
+
+        // Compound terms first: "semi washed" also contains "washed", and
+        // "medium dark" also contains both "medium" and "dark".
+        let processes: [(String, ProcessingMethod)] = [
+            ("wet hulled", .wetHulled), ("semi washed", .semiWashed),
+            ("fully washed", .washed), ("washed", .washed),
+            ("honey", .honey), ("natural", .natural),
+        ]
+        draft.processingMethod = processes.first { normalized.localizedCaseInsensitiveContains($0.0) }?.1
+
+        let roasts: [(String, RoastLevel)] = [
+            ("medium dark", .mediumDark), ("medium light", .lightMedium),
+            ("light medium", .lightMedium), ("dark", .dark),
+            ("light", .light), ("medium", .medium),
+        ]
+        draft.roastLevel = roasts.first { normalized.localizedCaseInsensitiveContains($0.0) }?.1
+
+        return draft
+    }
+
+    /// The whole extraction stage, and it never throws: a model that refuses
+    /// the text still has to leave the user a prefilled confirm screen rather
+    /// than a dead end.
+    static func draft(fromOCR raw: String) async -> Draft {
+        let normalized = normalize(raw)
+        if normalized != raw {
+            Log.write(.scan, "normalised Indonesian label terms before the model saw them")
+        }
+
+        do {
+            return Draft(try await extract(from: normalized))
+        } catch {
+            Log.write(.failure, "model extraction unavailable (\(error)), falling back to the label vocabulary")
+            return deterministicFields(from: normalized)
+        }
+    }
+
+    /// A label panel is terse, and terse lines carry weak language signal. The
+    /// framework classifies the whole prompt and refuses one it reads as
+    /// Indonesian, so a few sentences of ordinary English around the label are
+    /// what tip it back. Measured, not guessed: the same panel throws
+    /// `unsupportedLanguageOrLocale` without this and passes with it, while the
+    /// label lines and the place names each pass on their own.
+    static let carrier = """
+        The following lines were scanned from the label of a bag of coffee beans. \
+        The scan is unreliable, so some words may be misspelled and the lines may \
+        be out of order. Read whatever fields the label states and leave the rest empty.
+
+        """
+
+    /// Guided generation over the normalised text. The instructions carry no
+    /// Indonesian at all: the language check runs over the whole session, so a
+    /// glossary here would trip it just as the raw label did. Translation is
+    /// `normalize`'s job, and by this point it has already happened.
     static func extract(from ocrText: String) async throws -> ScannedBagFields {
         let session = LanguageModelSession(
             instructions: """
-                You are reading text scanned off an Indonesian coffee bag.
+                You are reading text scanned off a coffee bag from Indonesia.
                 Fill only the fields the text actually states. Leave a field empty rather than guessing.
-                The text may mix Indonesian and English, and OCR may have garbled it.
-                Indonesian label vocabulary, since most bags mix the two languages on one panel:
-                "kopi" is coffee, "biji" is whole bean, "bubuk" is ground.
-                "proses" is the process. "giling basah" is wet-hulled, "cuci" or "full wash" is washed, "natural" and "honey" are printed in English.
-                "sangrai" is roast, and "tanggal sangrai" or "tgl sangrai" is the roast date. "sangrai medium gelap" is a medium-dark roast; "gelap" is dark, "terang" or "muda" is light.
-                "berat bersih" is net weight. "ketinggian" is altitude. "varietas" is the variety. "petani" is the farmer and "kebun" the estate, neither of which is the roaster.
-                Months: Januari, Februari, Maret, April, Mei, Juni, Juli, Agustus, September, Oktober, November, Desember.
-                Do not translate a place name into English. Bener Meriah, Tana Toraja and Ngada are regions, not descriptions.
+                OCR may have garbled the text, and the lines may be out of order.
+                Origin, region and estate names are proper nouns. Copy them as written and never translate them.
+                The roaster is the company that packed the bag, not the farmer, the estate, or the growing region.
+                The coffee's name is usually the largest text and may be in Indonesian. Copy it as printed.
+                Give the roast date as yyyy-MM-dd.
                 """
         )
-        let fields = try await session.respond(to: ocrText, generating: ScannedBagFields.self).content
+        let fields = try await session.respond(to: Self.carrier + ocrText, generating: ScannedBagFields.self).content
         Log.write(.scan, "extracted name=\(fields.name ?? "-") roaster=\(fields.roaster ?? "-") island=\(fields.island.map { "\($0)" } ?? "-") process=\(fields.processing.map { "\($0)" } ?? "-") roast=\(fields.roast.map { "\($0)" } ?? "-") date=\(fields.roastDate ?? "-") weight=\(fields.weightGrams.map(String.init) ?? "-")")
         return fields
     }

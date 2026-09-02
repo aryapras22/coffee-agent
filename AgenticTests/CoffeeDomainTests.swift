@@ -5,6 +5,7 @@
 
 import Foundation
 import Testing
+import FoundationModels
 import UIKit
 import Vision
 
@@ -259,6 +260,90 @@ struct BagScanLanguageTests {
     }
 }
 
+/// Foundation Models supports 23 locales and Indonesian is not one of them,
+/// so an Indonesian label has to reach it as English or not at all.
+struct BagScanNormalizationTests {
+    @Test("the on-device model has no Indonesian, which is what forces the pre-pass")
+    func indonesianIsNotAModelLanguage() {
+        let codes = SystemLanguageModel.default.supportedLanguages.map(\.languageCode)
+        #expect(!codes.contains(Locale.Language(identifier: "id").languageCode))
+    }
+
+    @Test("label terms become English while place names are left alone")
+    func termsAreSubstitutedAndNamesArePreserved() {
+        let normalized = BagScanner.normalize("Proses: Giling Basah, Bener Meriah, Aceh")
+        #expect(normalized.localizedCaseInsensitiveContains("process"))
+        #expect(normalized.localizedCaseInsensitiveContains("wet hulled"))
+        #expect(normalized.contains("Bener Meriah"))
+        #expect(normalized.contains("Aceh"))
+    }
+
+    @Test("a longer phrase is not half-consumed by a shorter one inside it")
+    func longestPhraseWins() {
+        #expect(BagScanner.normalize("Berat Bersih 200 g").localizedCaseInsensitiveContains("net weight"))
+        #expect(BagScanner.normalize("Tanggal Sangrai 28 Agustus 2026").localizedCaseInsensitiveContains("roast date"))
+    }
+
+    @Test("an Indonesian month becomes one the date parser accepts")
+    func monthsAreTranslated() {
+        let normalized = BagScanner.normalize("28 Agustus 2026")
+        #expect(normalized == "28 August 2026")
+        #expect(BagScanner.parseDate(normalized) != nil)
+    }
+
+    @Test("an all-English bag passes through untouched")
+    func englishIsLeftAlone() {
+        let english = "Single Origin, Whole Bean, Washed, Roasted 12 March 2026"
+        #expect(BagScanner.normalize(english) == english)
+    }
+}
+
+/// The floor the user lands on when the model refuses the text outright.
+struct BagScanFallbackTests {
+    private func fields(_ raw: String) -> BagScanner.Draft {
+        BagScanner.deterministicFields(from: BagScanner.normalize(raw))
+    }
+
+    @Test("process, roast, date and weight come off the vocabulary without the model")
+    func closedVocabularyFillsFourFields() {
+        let draft = fields("""
+            KOPI ARABIKA GAYO
+            Proses: Giling Basah
+            Sangrai: Medium Gelap
+            Tanggal Sangrai: 28 Agustus 2026
+            Berat Bersih 200 g
+            """)
+
+        #expect(draft.processingMethod == .wetHulled)
+        #expect(draft.roastLevel == .mediumDark)
+        #expect(draft.weightGrams == 200)
+        #expect(draft.roastDate != nil)
+        #expect(draft.scanConfidence == .scanUnverified)
+    }
+
+    @Test("a compound roast is not read as its first word")
+    func compoundRoastBeatsItsParts() {
+        #expect(fields("Sangrai Medium Gelap").roastLevel == .mediumDark)
+        #expect(fields("Sangrai Gelap").roastLevel == .dark)
+        #expect(fields("Roast: Medium").roastLevel == .medium)
+    }
+
+    @Test("semi-washed is not collapsed into washed")
+    func compoundProcessBeatsItsParts() {
+        #expect(fields("Proses: Semi Basah").processingMethod == .semiWashed)
+        #expect(fields("Proses: Cuci").processingMethod == .washed)
+    }
+
+    @Test("a bag stating none of it yields an empty draft rather than guesses")
+    func nothingStatedYieldsNothing() {
+        let draft = fields("Artisan Coffee Roasters")
+        #expect(draft.processingMethod == nil)
+        #expect(draft.roastLevel == nil)
+        #expect(draft.weightGrams == nil)
+        #expect(draft.roastDate == nil)
+    }
+}
+
 /// Renders a label panel the way an Indonesian bag prints one, half in each
 /// language, and runs it through the real recogniser. Synthetic type is kinder
 /// than a matte curved bag, so this proves the configuration reads Indonesian
@@ -300,6 +385,30 @@ struct BagScanReadingTests {
         #expect(text.contains("basah"))
         #expect(text.contains("agustus"))
         #expect(text.contains("single origin"))
+    }
+
+    @Test("an Indonesian panel survives the whole pipeline and reaches the confirm screen")
+    func indonesianPanelYieldsAUsableDraft() async throws {
+        guard SystemLanguageModel.default.availability == .available else { return }
+
+        let image = labelImage([
+            "KOPI ARABIKA GAYO",
+            "Bener Meriah, Aceh",
+            "Proses: Giling Basah",
+            "Sangrai: Medium Gelap",
+            "Tanggal Sangrai: 28 Agustus 2026",
+            "Berat Bersih 200 g",
+        ])
+
+        let raw = try await BagScanner.readText(from: image)
+        let draft = await BagScanner.draft(fromOCR: raw)
+
+        // Whichever path ran, model or fallback, the user gets these four.
+        #expect(draft.processingMethod == .wetHulled)
+        #expect(draft.roastLevel == .mediumDark)
+        #expect(draft.weightGrams == 200)
+        #expect(draft.roastDate != nil)
+        #expect(draft.scanConfidence == .scanUnverified)
     }
 }
 

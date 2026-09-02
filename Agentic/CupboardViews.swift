@@ -440,7 +440,9 @@ struct ScanFlowView: View {
             let text = try await BagScanner.readText(from: cgImage)
             ocrText = text
             stage = .extracting
-            draft = BagScanner.Draft(try await BagScanner.extract(from: text))
+            // Never throws: an Indonesian label the model refuses still comes
+            // back as a draft filled from the label vocabulary alone.
+            draft = await BagScanner.draft(fromOCR: text)
             stage = .ready
             Log.write(.scan, "ready for confirmation")
         } catch {
