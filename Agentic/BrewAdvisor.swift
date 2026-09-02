@@ -194,6 +194,9 @@ struct BrewAdviceOutcome {
     var grindDirection: String
     var lastGrindSetting: String?
     var ratedBrews: Int
+    /// Brews logged against this bean with no verdict yet. Advice rests on the
+    /// most recent rated brew, so these are the evidence it is missing.
+    var brewsAwaitingReview: Int
     var cause: String?
 }
 
@@ -227,6 +230,7 @@ struct BrewAdviceTool: Tool {
                 grindDirection: advice.direction.rawValue,
                 lastGrindSetting: nil,
                 ratedBrews: 0,
+                brewsAwaitingReview: 0,
                 cause: BrewAdvisor.remedy(for: reported)?.cause
             )
         }
@@ -244,6 +248,7 @@ struct BrewAdviceTool: Tool {
                     grindDirection: BrewAdvisor.GrindAdvice.Direction.unknown.rawValue,
                     lastGrindSetting: nil,
                     ratedBrews: 0,
+                    brewsAwaitingReview: 0,
                     cause: nil
                 )
             }
@@ -265,7 +270,8 @@ struct BrewAdviceTool: Tool {
             grindDirection: advice.direction.rawValue,
             lastGrindSetting: rated.sorted { $0.date > $1.date }.first?.grindSetting,
             ratedBrews: rated.count,
-            cause: rated.first?.outcome?.symptom.flatMap { BrewAdvisor.remedy(for: $0)?.cause }
+            brewsAwaitingReview: history.count { $0.outcome == nil },
+            cause: rated.first?.outcome.map(\.symptom).flatMap { BrewAdvisor.remedy(for: $0)?.cause }
         )
     }
 }

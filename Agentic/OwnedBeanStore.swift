@@ -47,9 +47,15 @@ nonisolated enum BrewSymptom: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// What the cup did, and nothing about how much it was liked. The symptom is
+/// what `BrewAdvisor` acts on; rating, flavours and intensities live on
+/// `TastingNote` so no rating is ever recorded in two places.
+///
+/// A `BrewSession` with no outcome is awaiting review, not lacking data: the
+/// timer writes the session as soon as the brew ends and never blocks on the
+/// user having an opinion yet.
 nonisolated struct BrewOutcome: Codable, Sendable {
-    let rating: Int
-    let symptom: BrewSymptom?
+    let symptom: BrewSymptom
     let note: String?
 }
 
@@ -73,6 +79,13 @@ final class OwnedBean {
     var purchaseDate: Date = Date.now
     var bagWeightGrams: Int?
     var remainingGrams: Int?
+    /// Filenames only. The container directory is reassigned on reinstall, so
+    /// a stored absolute path would point at nothing; `BagPhotoStore` rebuilds
+    /// the URL from the Documents directory at read time.
+    var bagPhotoFilename: String?
+    /// A close-up of the roast date stamp, which on a real bag is the least
+    /// legible field and the one most often worth re-reading after saving.
+    var roastDatePhotoFilename: String?
     private var scanConfidenceValue: String = ScanConfidence.userEntered.rawValue
 
     @Relationship(deleteRule: .cascade, inverse: \TastingNote.bean)
@@ -93,6 +106,7 @@ final class OwnedBean {
         purchaseDate: Date = .now,
         bagWeightGrams: Int? = nil,
         remainingGrams: Int? = nil,
+        bagPhotoFilename: String? = nil,
         scanConfidence: ScanConfidence = .userEntered
     ) {
         self.displayName = displayName
@@ -106,6 +120,7 @@ final class OwnedBean {
         self.purchaseDate = purchaseDate
         self.bagWeightGrams = bagWeightGrams
         self.remainingGrams = remainingGrams ?? bagWeightGrams
+        self.bagPhotoFilename = bagPhotoFilename
         self.scanConfidenceValue = scanConfidence.rawValue
     }
 
@@ -211,7 +226,6 @@ final class BrewSession {
     var totalSeconds: Int?
     var pulledAtGurgle: Bool?
 
-    private var outcomeRating: Int?
     private var outcomeSymptomValue: String?
     private var outcomeNote: String?
 
@@ -238,24 +252,23 @@ final class BrewSession {
         set { heatValue = newValue.rawValue }
     }
 
-    /// Three stored columns behind one optional value, so `outcome == nil`
-    /// reads as "this brew was never rated" without a second flag to keep in
-    /// step with it.
+    /// Two stored columns behind one optional value. The symptom is the
+    /// presence flag, so `outcome == nil` reads as "not reviewed yet" without
+    /// a second field to keep in step with it.
     var outcome: BrewOutcome? {
         get {
-            guard let outcomeRating else { return nil }
-            return BrewOutcome(
-                rating: outcomeRating,
-                symptom: outcomeSymptomValue.flatMap(BrewSymptom.init(rawValue:)),
-                note: outcomeNote
-            )
+            guard let symptom = outcomeSymptomValue.flatMap(BrewSymptom.init(rawValue:)) else {
+                return nil
+            }
+            return BrewOutcome(symptom: symptom, note: outcomeNote)
         }
         set {
-            outcomeRating = newValue?.rating
-            outcomeSymptomValue = newValue?.symptom?.rawValue
+            outcomeSymptomValue = newValue?.symptom.rawValue
             outcomeNote = newValue?.note
         }
     }
+
+    var awaitingReview: Bool { outcome == nil }
 }
 
 /// The filters the owned-bean tool exposes, as a value so the predicate can be
@@ -284,9 +297,13 @@ nonisolated struct OwnedBeanSnapshot: Identifiable, Sendable {
     let remainingGrams: Int?
     let bagWeightGrams: Int?
     let scanConfidence: ScanConfidence
+    let bagPhotoFilename: String?
+    let roastDatePhotoFilename: String?
     let tastedFlavors: [FlavorNote]
     let bestRating: Int?
     let brewCount: Int
+    /// Brews logged against this bag that nobody has said anything about yet.
+    let brewsAwaitingReview: Int
 
     init(_ bean: OwnedBean) {
         id = bean.id
@@ -301,9 +318,12 @@ nonisolated struct OwnedBeanSnapshot: Identifiable, Sendable {
         remainingGrams = bean.remainingGrams
         bagWeightGrams = bean.bagWeightGrams
         scanConfidence = bean.scanConfidence
+        bagPhotoFilename = bean.bagPhotoFilename
+        roastDatePhotoFilename = bean.roastDatePhotoFilename
         tastedFlavors = Array(Set(bean.tastingNotes.flatMap(\.flavorNotes)))
         bestRating = bean.bestRating
         brewCount = bean.brewSessions.count
+        brewsAwaitingReview = bean.brewSessions.count { $0.outcome == nil }
     }
 }
 

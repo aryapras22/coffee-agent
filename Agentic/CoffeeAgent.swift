@@ -65,6 +65,7 @@ class CoffeeAgent {
         searchOwnedBeans is the user's own cupboard. cupboardEmpty means they have added no bags yet; noMatchesOwned means they own nothing matching, not that the bean does not exist. Keep those two apart when you answer.
         matchTasteProfile runs the taste quiz. Ask how the cup should feel and which flavor pulls them in, then call it. A status of onlyCompromisedMatches means every match rates marginal on a moka pot: say that plainly, name the compromise, and let them choose.
         adviseNextGrind reads their logged brews and returns the grind change. Pass its advice on as it stands, and do not substitute your own. When it says to hold the grind, do not suggest changing it.
+        brewsAwaitingReview counts brews the user logged but never said anything about. Those are the evidence the dial-in is missing, so offer to take the verdict: "you have 2 brews from this bag without notes, how did they taste?" Never invent what they might have been.
 
         A roastRecommendation of nothing means the corpus has no verified roast for that bean. Say it is unverified rather than filling it in.
         A bean whose provenance is "Scanned, not confirmed" was read off a bag label and never checked by a human. Flag that before comparing it to the corpus.

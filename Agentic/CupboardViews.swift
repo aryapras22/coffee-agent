@@ -129,8 +129,21 @@ struct BeanDetailView: View {
     let manager: CupboardManager
     let bean: OwnedBean
 
+    @State private var capturingRoastDate = false
+
     var body: some View {
         List {
+            if let photo = BagPhotoStore.image(named: bean.bagPhotoFilename) {
+                Section {
+                    Image(uiImage: photo)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(.rect(cornerRadius: Theme.bubbleRadius))
+                        .listRowInsets(EdgeInsets())
+                }
+                .listRowBackground(Theme.paper)
+            }
+
             Section {
                 LabelledRow("Roaster", bean.roasterName)
                 LabelledRow("Origin", [bean.subregion, bean.island?.label].compactMap { $0 }.joined(separator: ", "))
@@ -139,6 +152,22 @@ struct BeanDetailView: View {
                 LabelledRow("Roasted", bean.roastDate?.formatted(date: .abbreviated, time: .omitted))
                 LabelledRow("Bag", bean.bagWeightGrams.map { "\($0)g" })
                 LabelledRow("Provenance", bean.scanConfidence.label)
+            }
+            .listRowBackground(Theme.paper)
+
+            Section("Roast date stamp") {
+                if let stamp = BagPhotoStore.image(named: bean.roastDatePhotoFilename) {
+                    Image(uiImage: stamp)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 160)
+                        .clipShape(.rect(cornerRadius: Theme.bubbleRadius))
+                }
+                Button(bean.roastDatePhotoFilename == nil ? "Photograph the date stamp" : "Retake it") {
+                    capturingRoastDate = true
+                }
+                .font(Theme.control)
+                .foregroundStyle(Theme.accent)
             }
             .listRowBackground(Theme.paper)
 
@@ -155,7 +184,15 @@ struct BeanDetailView: View {
                     Text("None logged yet.").font(Theme.control).foregroundStyle(Theme.inkMuted)
                 } else {
                     ForEach(sessions) { session in
-                        BrewRow(session: session)
+                        if session.awaitingReview {
+                            NavigationLink {
+                                BrewReviewView(manager: manager, session: session) {}
+                            } label: {
+                                BrewRow(session: session)
+                            }
+                        } else {
+                            BrewRow(session: session)
+                        }
                     }
                 }
             }
@@ -166,6 +203,12 @@ struct BeanDetailView: View {
         .navigationTitle(bean.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.paper, for: .navigationBar)
+        .fullScreenCover(isPresented: $capturingRoastDate) {
+            CameraPicker { captured in
+                Task { await manager.attachRoastDatePhoto(captured, to: bean) }
+            }
+            .ignoresSafeArea()
+        }
     }
 }
 
@@ -186,11 +229,7 @@ private struct BrewRow: View {
         var parts: [String] = []
         if let drip = session.timeToFirstDripSeconds { parts.append("first drip \(drip)s") }
         if let total = session.totalSeconds { parts.append("total \(total)s") }
-        if let outcome = session.outcome {
-            parts.append(outcome.symptom?.label ?? "rated \(outcome.rating)/5")
-        } else {
-            parts.append("not rated")
-        }
+        parts.append(session.outcome?.symptom.label ?? "awaiting review")
         return parts.joined(separator: " · ")
     }
 }
@@ -231,14 +270,22 @@ struct BagDraftForm: View {
     let manager: CupboardManager
     @State var draft: BagScanner.Draft
     let ocrText: String?
+    let photo: UIImage?
     let onFinish: () -> Void
 
     @State private var hasRoastDate: Bool
 
-    init(manager: CupboardManager, draft: BagScanner.Draft, ocrText: String?, onFinish: @escaping () -> Void) {
+    init(
+        manager: CupboardManager,
+        draft: BagScanner.Draft,
+        ocrText: String?,
+        photo: UIImage? = nil,
+        onFinish: @escaping () -> Void
+    ) {
         self.manager = manager
         self._draft = State(initialValue: draft)
         self.ocrText = ocrText
+        self.photo = photo
         self.onFinish = onFinish
         self._hasRoastDate = State(initialValue: draft.roastDate != nil)
     }
@@ -318,7 +365,9 @@ struct BagDraftForm: View {
         var confirmed = draft
         if !hasRoastDate { confirmed.roastDate = nil }
         if confirmed.scanConfidence == .scanUnverified { confirmed.scanConfidence = .scanConfirmed }
-        manager.add(confirmed)
+        // The bag is what the user asked to keep; the photo is a bonus that
+        // must not delay the save it belongs to.
+        Task { await manager.add(confirmed, photo: photo) }
         onFinish()
     }
 }
@@ -344,7 +393,7 @@ struct ScanFlowView: View {
     var body: some View {
         NavigationStack {
             if let draft {
-                BagDraftForm(manager: manager, draft: draft, ocrText: ocrText) { dismiss() }
+                BagDraftForm(manager: manager, draft: draft, ocrText: ocrText, photo: image) { dismiss() }
             } else {
                 capture
             }

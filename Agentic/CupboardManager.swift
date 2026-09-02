@@ -6,6 +6,7 @@
 import Foundation
 import Observation
 import SwiftData
+import UIKit
 
 /// Owns the bags and the brews: the `ModelContext` for them, and the job of
 /// pushing snapshots into the agent's `Cupboard` after every change. Kept
@@ -49,8 +50,24 @@ final class CupboardManager {
         return BrewAdvisor.nextGrind(from: history)
     }
 
+    /// The photo is written before the bean, so a bag never persists a
+    /// filename pointing at a file that failed to save. A photo that cannot be
+    /// written costs the picture, not the bag.
     @discardableResult
-    func add(_ draft: BagScanner.Draft) -> OwnedBean {
+    func add(_ draft: BagScanner.Draft, photo: UIImage? = nil) async -> OwnedBean {
+        var filename: String?
+        if let photo {
+            do {
+                filename = try await BagPhotoStore.save(photo)
+            } catch {
+                Log.write(.failure, "bag photo not saved: \(error)")
+            }
+        }
+        return add(draft, photoFilename: filename)
+    }
+
+    @discardableResult
+    func add(_ draft: BagScanner.Draft, photoFilename: String? = nil) -> OwnedBean {
         let bean = OwnedBean(
             displayName: draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines),
             corpusReferenceId: nil,
@@ -61,6 +78,7 @@ final class CupboardManager {
             roastLevel: draft.roastLevel,
             roastDate: draft.roastDate,
             bagWeightGrams: draft.weightGrams,
+            bagPhotoFilename: photoFilename,
             scanConfidence: draft.scanConfidence
         )
         context.insert(bean)
@@ -71,8 +89,27 @@ final class CupboardManager {
 
     func delete(_ bean: OwnedBean) {
         Log.write(.cupboard, "deleted \"\(bean.displayName)\" with \(bean.brewSessions.count) brews")
+        // SwiftData cascades to the notes and brews but knows nothing about
+        // the container, so the photos would leak.
+        BagPhotoStore.delete(bean.bagPhotoFilename)
+        BagPhotoStore.delete(bean.roastDatePhotoFilename)
         context.delete(bean)
         save()
+    }
+
+    /// Replaces rather than accumulates: a re-shot date stamp means the old
+    /// one was wrong or unreadable, so keeping it would only be clutter.
+    func attachRoastDatePhoto(_ image: UIImage, to bean: OwnedBean) async {
+        do {
+            let filename = try await BagPhotoStore.save(image)
+            BagPhotoStore.delete(bean.roastDatePhotoFilename)
+            bean.roastDatePhotoFilename = filename
+            save()
+            Log.write(.cupboard, "roast date photo attached to \"\(bean.displayName)\"")
+        } catch {
+            Log.write(.failure, "roast date photo not saved: \(error)")
+            failure = "That photo could not be saved."
+        }
     }
 
     @discardableResult
@@ -102,10 +139,22 @@ final class CupboardManager {
         Log.write(.brew, "recorded \(marks.compactMap { $0 }.joined(separator: " "))")
     }
 
-    func finish(_ session: BrewSession, outcome: BrewOutcome) {
+    /// Reviewing is a separate act from brewing. The session is already
+    /// stored by the time this runs; all it adds is the verdict.
+    func review(_ session: BrewSession, outcome: BrewOutcome) {
         session.outcome = outcome
         save()
-        Log.write(.brew, "finished symptom=\(outcome.symptom?.rawValue ?? "none") rating=\(outcome.rating)/5 grind=\(session.grindSetting.isEmpty ? "unset" : session.grindSetting)")
+        Log.write(.brew, "reviewed symptom=\(outcome.symptom.rawValue) grind=\(session.grindSetting.isEmpty ? "unset" : session.grindSetting)")
+    }
+
+    /// Brews nobody has said anything about yet. A nil outcome means awaiting
+    /// review, not that the brew went unrecorded.
+    var awaitingReview: [BrewSession] {
+        sessions.filter { $0.outcome == nil }.sorted { $0.date > $1.date }
+    }
+
+    func awaitingReview(for bean: OwnedBean) -> [BrewSession] {
+        awaitingReview.filter { $0.bean?.id == bean.id }
     }
 
     func addTastingNote(

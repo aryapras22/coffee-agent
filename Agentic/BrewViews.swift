@@ -113,14 +113,19 @@ struct BrewFlowView: View {
     @State private var heatLevel = HeatLevel.mediumLow
     @State private var doseGrams: Double?
     @State private var timer: BrewTimerModel?
+    @State private var reviewing: BrewSession?
 
     private var bean: OwnedBean? { beanId.flatMap(manager.bean(id:)) }
 
     var body: some View {
         NavigationStack {
             Group {
-                if let timer {
-                    BrewTimerView(timer: timer, manager: manager, onFinish: { dismiss() })
+                if let reviewing {
+                    BrewReviewView(manager: manager, session: reviewing) { dismiss() }
+                } else if let timer {
+                    BrewTimerView(timer: timer, onFinish: { dismiss() }) { session in
+                        reviewing = session
+                    }
                 } else {
                     setup
                 }
@@ -216,11 +221,8 @@ struct BrewFlowView: View {
 
 private struct BrewTimerView: View {
     let timer: BrewTimerModel
-    let manager: CupboardManager
     let onFinish: () -> Void
-
-    @State private var rating = 3
-    @State private var symptom = BrewSymptom.balanced
+    let onReview: (BrewSession) -> Void
 
     var body: some View {
         ScrollView {
@@ -261,49 +263,190 @@ private struct BrewTimerView: View {
                 }
 
                 if timer.phase == .finished {
-                    outcomeForm
+                    finishedActions
                 }
+
             }
             .padding(Theme.lg)
         }
     }
 
-    private var outcomeForm: some View {
+    /// The brew is already stored by the time this shows. Reviewing is
+    /// offered, never required: a cup you have not tasted yet is a normal
+    /// state, and blocking here would either force a guess or lose the
+    /// session's timings entirely.
+    private var finishedActions: some View {
         VStack(alignment: .leading, spacing: Theme.md) {
             Rectangle().fill(Theme.rule).frame(height: Theme.hairline)
 
-            Text("How did it taste?").font(Theme.display).foregroundStyle(Theme.ink)
-
-            Picker("Symptom", selection: $symptom) {
-                ForEach(BrewSymptom.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.menu)
-            .tint(Theme.accent)
-
-            Stepper("Rating \(rating) of 5", value: $rating, in: 1...5)
-                .font(Theme.control)
+            Text("Logged. Taste it, then tell me how it went.")
+                .font(Theme.reading)
                 .foregroundStyle(Theme.ink)
 
-            if let remedy = BrewAdvisor.remedy(for: symptom) {
-                VStack(alignment: .leading, spacing: Theme.xs) {
+            Button("Review it now") { onReview(timer.brewSession) }
+                .font(Theme.control)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.md)
+                .background(Theme.accent, in: .capsule)
+                .foregroundStyle(Theme.paper)
+
+            Button("Later") { onFinish() }
+                .font(Theme.control)
+                .foregroundStyle(Theme.inkMuted)
+                .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+/// Two depths, because the two answers serve different things. The verdict is
+/// mechanical and feeds `BrewAdvisor`, so it has to be cheap enough that
+/// people actually give it: one tap. The tasting note is subjective and feeds
+/// the comparison against the reference profile, so it is worth a form, but
+/// only when someone wants to fill one in.
+struct BrewReviewView: View {
+    let manager: CupboardManager
+    let session: BrewSession
+    let onFinish: () -> Void
+
+    @State private var symptom: BrewSymptom?
+    @State private var addingNote = false
+    @State private var rating = 3
+    @State private var acidity = IntensityLevel.medium
+    @State private var body_ = IntensityLevel.medium
+    @State private var flavors: Set<FlavorNote> = []
+    @State private var comment = ""
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(BrewSymptom.allCases, id: \.self) { candidate in
+                    Button {
+                        select(candidate)
+                    } label: {
+                        HStack {
+                            Text(candidate.label)
+                                .font(Theme.control)
+                                .foregroundStyle(Theme.ink)
+                            Spacer()
+                            if symptom == candidate {
+                                Image(systemName: "checkmark").foregroundStyle(Theme.accent)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("How was it?")
+            } footer: {
+                Text(addingNote
+                    ? "Pick one, then fill in as much of the note as you like."
+                    : "Tapping a verdict saves it. That is all the dial-in needs.")
+            }
+            .listRowBackground(Theme.paperRaised)
+
+            if let symptom, let remedy = BrewAdvisor.remedy(for: symptom) {
+                Section("What that means") {
                     Text(remedy.cause).font(Theme.label).foregroundStyle(Theme.inkMuted)
-                    Text(remedy.fix).font(Theme.reading).foregroundStyle(Theme.ink)
+                    Text(BrewAdvisor.advice(for: symptom, grind: grind).message)
+                        .font(Theme.reading)
+                        .foregroundStyle(Theme.ink)
+                }
+                .listRowBackground(Theme.paperRaised)
+            }
+
+            if addingNote {
+                tastingNote
+            } else {
+                Section {
+                    Button("Add a tasting note") {
+                        addingNote = true
+                    }
+                    .font(Theme.control)
+                    .foregroundStyle(Theme.accent)
+                }
+                .listRowBackground(Theme.paperRaised)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.paper)
+        .navigationTitle("Review")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Theme.paper, for: .navigationBar)
+        .toolbar {
+            if addingNote {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .tint(Theme.accent)
+                        .disabled(symptom == nil)
                 }
             }
-
-            Text(BrewAdvisor.advice(for: symptom, grind: timer.brewSession.grindSetting.isEmpty ? "your setting" : timer.brewSession.grindSetting).message)
-                .font(Theme.reading)
-                .foregroundStyle(Theme.accent)
-
-            Button("Save this brew") {
-                manager.finish(timer.brewSession, outcome: BrewOutcome(rating: rating, symptom: symptom, note: nil))
-                onFinish()
-            }
-            .font(Theme.control)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Theme.md)
-            .background(Theme.accent, in: .capsule)
-            .foregroundStyle(Theme.paper)
         }
+    }
+
+    @ViewBuilder
+    private var tastingNote: some View {
+        Section("What you tasted") {
+            ForEach(FlavorNote.allCases, id: \.self) { note in
+                Button {
+                    if flavors.contains(note) { flavors.remove(note) } else { flavors.insert(note) }
+                } label: {
+                    HStack {
+                        Text(note.label).font(Theme.control).foregroundStyle(Theme.ink)
+                        Spacer()
+                        if flavors.contains(note) {
+                            Image(systemName: "checkmark").foregroundStyle(Theme.accent)
+                        }
+                    }
+                }
+            }
+        }
+        .listRowBackground(Theme.paperRaised)
+
+        Section {
+            Picker("Acidity", selection: $acidity) {
+                ForEach(IntensityLevel.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            Picker("Body", selection: $body_) {
+                ForEach(IntensityLevel.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            Stepper("Rating \(rating) of 5", value: $rating, in: 1...5)
+                .font(Theme.control)
+            TextField("Anything else", text: $comment, axis: .vertical)
+                .lineLimit(1...4)
+        }
+        .listRowBackground(Theme.paperRaised)
+    }
+
+    private var grind: String {
+        session.grindSetting.isEmpty ? "your setting" : session.grindSetting
+    }
+
+    /// One tap is the whole interaction when no note is being written, which
+    /// is what keeps the verdict cheap enough to be given at all.
+    private func select(_ candidate: BrewSymptom) {
+        symptom = candidate
+        guard !addingNote else { return }
+        manager.review(session, outcome: BrewOutcome(symptom: candidate, note: nil))
+        onFinish()
+    }
+
+    private func save() {
+        guard let symptom else { return }
+        let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        manager.review(session, outcome: BrewOutcome(symptom: symptom, note: trimmed.isEmpty ? nil : trimmed))
+
+        // Linked back to the session, so a bitter cup can be traced to the
+        // grind and heat that produced it.
+        if let bean = session.bean {
+            manager.addTastingNote(
+                to: bean,
+                acidity: acidity,
+                body: body_,
+                flavors: Array(flavors),
+                rating: rating,
+                brewSessionId: session.id,
+                freeformNote: trimmed.isEmpty ? nil : trimmed
+            )
+        }
+        onFinish()
     }
 }

@@ -40,6 +40,10 @@ struct OwnedBeanHit {
     var daysSinceRoast: Int?
     var remainingGrams: Int?
     var brewsLogged: Int
+    /// Brews from this bag that the user has not said anything about yet. The
+    /// agent is told to offer to collect them, because an unreviewed brew is
+    /// dial-in evidence that has not been recorded.
+    var brewsAwaitingReview: Int
     var bestRating: Int?
     var tastedFlavors: String
     /// Says whether a human ever checked the scanned fields. The model is told
@@ -121,6 +125,7 @@ struct OwnedBeanTool: Tool {
                     daysSinceRoast: bean.daysSinceRoast,
                     remainingGrams: bean.remainingGrams,
                     brewsLogged: bean.brewCount,
+                    brewsAwaitingReview: bean.brewsAwaitingReview,
                     bestRating: bean.bestRating,
                     tastedFlavors: bean.tastedFlavors.map(\.label).joined(separator: ", "),
                     provenance: bean.scanConfidence.label

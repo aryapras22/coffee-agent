@@ -103,7 +103,7 @@ struct DialInTests {
         let bean = OwnedBean(displayName: "Test")
         let brew = BrewSession(bean: bean, potSizeCups: 3, grindSetting: grind)
         brew.date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: .now) ?? .now
-        brew.outcome = symptom.map { BrewOutcome(rating: 3, symptom: $0, note: nil) }
+        brew.outcome = symptom.map { BrewOutcome(symptom: $0, note: nil) }
         return BrewSessionSnapshot(brew)
     }
 
@@ -216,6 +216,119 @@ struct OwnedBeanSearchTests {
         var query = OwnedBeanQuery()
         query.minRating = 4
         #expect(OwnedBeanSearch.matches(query, in: beans).map(\.displayName) == ["loved"])
+    }
+}
+
+/// A brew with no outcome is awaiting review, not lacking data, and the two
+/// have to stay distinguishable for the dial-in to know what it is missing.
+@MainActor
+struct BrewReviewStateTests {
+    private func session(_ symptom: BrewSymptom?) -> BrewSession {
+        let brew = BrewSession(bean: nil, potSizeCups: 3, grindSetting: "12")
+        brew.outcome = symptom.map { BrewOutcome(symptom: $0, note: nil) }
+        return brew
+    }
+
+    @Test("a finished brew starts awaiting review rather than rated")
+    func aNewBrewIsAwaitingReview() {
+        #expect(session(nil).awaitingReview)
+        #expect(session(nil).outcome == nil)
+    }
+
+    @Test("the symptom is the presence flag, so a reviewed brew is never nil")
+    func aReviewedBrewIsNotAwaiting() {
+        let reviewed = session(.bitter)
+        #expect(!reviewed.awaitingReview)
+        #expect(reviewed.outcome?.symptom == .bitter)
+    }
+
+    @Test("a note without a verdict is not a review")
+    func noteAloneDoesNotCountAsReviewed() {
+        let brew = session(nil)
+        brew.outcome = nil
+        #expect(brew.awaitingReview)
+    }
+
+    @Test("unreviewed brews are invisible to the dial-in, which is why they are counted")
+    func unreviewedBrewsCarryNoAdvice() {
+        let bean = OwnedBean(displayName: "Test")
+        let brews = [session(nil), session(nil)]
+        brews.forEach { $0.bean = bean; bean.brewSessions.append($0) }
+
+        let snapshots = brews.map(BrewSessionSnapshot.init)
+        #expect(BrewAdvisor.nextGrind(from: snapshots).direction == .unknown)
+        #expect(OwnedBeanSnapshot(bean).brewsAwaitingReview == 2)
+    }
+
+    @Test("a rating lives on the tasting note, never on the outcome")
+    func ratingIsNotDuplicated() {
+        let bean = OwnedBean(displayName: "Test")
+        let brew = session(.balanced)
+        brew.bean = bean
+        bean.brewSessions.append(brew)
+
+        let note = TastingNote(
+            perceivedAcidity: .low,
+            perceivedBody: .high,
+            flavorNotes: [.chocolate],
+            rating: 5,
+            brewSessionId: brew.id
+        )
+        bean.tastingNotes.append(note)
+
+        // Traceable back to the grind and heat that produced the cup.
+        #expect(note.brewSessionId == brew.id)
+        #expect(OwnedBeanSnapshot(bean).bestRating == 5)
+        #expect(OwnedBeanSnapshot(bean).brewsAwaitingReview == 0)
+    }
+}
+
+/// Only the filename is persisted, because the container directory is
+/// reassigned on reinstall and a stored absolute path would point at nothing.
+struct BagPhotoStoreTests {
+    private func image(_ size: CGSize) -> UIImage {
+        UIGraphicsImageRenderer(size: size).image { context in
+            UIColor.brown.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
+    @Test("a camera-sized frame is scaled to the long edge, keeping its shape")
+    func longEdgeIsCapped() {
+        let scaled = BagPhotoStore.downscaled(image(CGSize(width: 3213, height: 5712)))
+        #expect(max(scaled.size.width, scaled.size.height) == BagPhotoStore.maxEdge)
+        let ratio = scaled.size.width / scaled.size.height
+        #expect(abs(ratio - 3213.0 / 5712.0) < 0.01)
+    }
+
+    @Test("an image already small enough is not enlarged")
+    func smallImagesAreLeftAlone() {
+        let original = image(CGSize(width: 400, height: 300))
+        #expect(BagPhotoStore.downscaled(original).size == original.size)
+    }
+
+    @Test("what is stored is a bare filename, and the URL is rebuilt from it")
+    func onlyTheFilenameIsStored() async throws {
+        let filename = try await BagPhotoStore.save(image(CGSize(width: 2400, height: 1800)))
+        defer { BagPhotoStore.delete(filename) }
+
+        #expect(!filename.contains("/"))
+        #expect(filename.hasSuffix(".jpg"))
+        #expect(BagPhotoStore.image(named: filename) != nil)
+
+        let rebuilt = try #require(BagPhotoStore.url(for: filename))
+        #expect(rebuilt.lastPathComponent == filename)
+        #expect(rebuilt.path().contains("Documents"))
+    }
+
+    @Test("deleting removes the file, and deleting nothing is not an error")
+    func deleteIsBestEffort() async throws {
+        let filename = try await BagPhotoStore.save(image(CGSize(width: 800, height: 600)))
+        BagPhotoStore.delete(filename)
+        #expect(BagPhotoStore.image(named: filename) == nil)
+
+        BagPhotoStore.delete(nil)
+        BagPhotoStore.delete("does-not-exist.jpg")
     }
 }
 
