@@ -653,7 +653,11 @@ struct ContentView: View {
                 }
 
                 if !model.liveSteps.isEmpty {
-                    StepTrace(steps: model.liveSteps)
+                    // Expanded while the turn runs. This is the only moment
+                    // the trace is the content rather than a footnote to it:
+                    // there is no answer yet, and watching the tools go is
+                    // what says the app is working.
+                    StepTrace(steps: model.liveSteps, initiallyExpanded: true)
                 }
             }
 
@@ -801,9 +805,14 @@ private struct MessageRow: View {
                         .foregroundStyle(rule)
                 }
 
-                Text(message.role == .failure ? AttributedString(message.text) : Self.formatted(message.text))
+                // A reply that came back with nothing to say still has to
+                // read as a reply. Without this the bubble is a bare "2 steps"
+                // line and looks like the answer was replaced by the trace.
+                Text(message.text.isEmpty
+                    ? AttributedString("No answer came back for that one.")
+                    : (message.role == .failure ? AttributedString(message.text) : Self.formatted(message.text)))
                     .font(Theme.reading)
-                    .foregroundStyle(message.role == .failure ? Theme.inkMuted : Theme.ink)
+                    .foregroundStyle(message.role == .failure || message.text.isEmpty ? Theme.inkMuted : Theme.ink)
                     .textSelection(.enabled)
 
                 if !message.places.isEmpty {
@@ -1026,20 +1035,25 @@ private struct MapPreview: View {
 private struct StepTrace: View {
     let steps: [AgentStep]
 
-    /// Collapsed until asked for. The trace is there to be checked when an
-    /// answer looks wrong, not to sit under every reply competing with it.
-    @State private var isExpanded = false
+    /// Collapsed under a finished answer, where the trace is a receipt to
+    /// check when something looks wrong. Expanded while a turn runs, where it
+    /// is the only thing on screen saying work is happening.
+    var initiallyExpanded = false
+
+    @State private var isExpanded: Bool?
+
+    private var expanded: Bool { isExpanded ?? initiallyExpanded }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.md) {
             Button {
-                withAnimation(Theme.enter) { isExpanded.toggle() }
+                withAnimation(Theme.enter) { isExpanded = !expanded }
             } label: {
                 HStack(spacing: Theme.xs) {
                     Text(steps.count == 1 ? "1 step" : "\(steps.count) steps")
                     Image(systemName: "chevron.down")
                         .font(.caption2)
-                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                        .rotationEffect(.degrees(expanded ? 0 : -90))
                 }
                 .font(Theme.label)
                 .foregroundStyle(Theme.inkMuted)
@@ -1050,9 +1064,9 @@ private struct StepTrace: View {
             }
             .buttonStyle(PressScale())
             .accessibilityLabel(steps.count == 1 ? "1 step" : "\(steps.count) steps")
-            .accessibilityHint(isExpanded ? "Hides what the agent did" : "Shows what the agent did")
+            .accessibilityHint(expanded ? "Hides what the agent did" : "Shows what the agent did")
 
-            if isExpanded {
+            if expanded {
                 VStack(alignment: .leading, spacing: Theme.md) {
                     ForEach(steps) { step in
                         VStack(alignment: .leading, spacing: Theme.xs) {
