@@ -116,3 +116,39 @@ struct WebSearchToolTests {
         #expect(outcome.results.isEmpty)
     }
 }
+
+struct WebSearchLocationTests {
+    private let bandung = CoarsePlace(locality: "Bandung", country: "Indonesia")
+
+    @Test("a known place is appended so the search is biased towards it")
+    func placeIsAppended() {
+        #expect(WebSearchTool.localised("where to buy gayo coffee", near: bandung)
+            == "where to buy gayo coffee in Bandung, Indonesia")
+    }
+
+    @Test("no location leaves the query exactly as the model wrote it")
+    func noPlaceLeavesTheQueryAlone() {
+        #expect(WebSearchTool.localised("where to buy gayo coffee", near: nil)
+            == "where to buy gayo coffee")
+    }
+
+    @Test("a query that already names the place is not given it twice")
+    func alreadyNamedPlaceIsNotRepeated() {
+        #expect(WebSearchTool.localised("coffee roasters in Bandung", near: bandung)
+            == "coffee roasters in Bandung")
+        #expect(WebSearchTool.localised("indonesia coffee exporters", near: bandung)
+            == "indonesia coffee exporters")
+    }
+
+    @Test("a place with only a country still narrows the search")
+    func partialPlaceStillHelps() {
+        let country = CoarsePlace(locality: nil, country: "Indonesia")
+        #expect(WebSearchTool.localised("moka pot", near: country) == "moka pot in Indonesia")
+    }
+
+    @Test("a place with nothing in it is the same as no place")
+    func emptyPlaceChangesNothing() {
+        let nowhere = CoarsePlace(locality: nil, country: nil)
+        #expect(WebSearchTool.localised("moka pot", near: nowhere) == "moka pot")
+    }
+}

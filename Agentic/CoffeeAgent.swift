@@ -83,6 +83,7 @@ class CoffeeAgent {
         A bean whose provenance is "Scanned, not confirmed" was read off a bag label and never checked by a human. Flag that before comparing it to the corpus.
         A status of indexStale or indexUnavailable means search failed, not that nothing matched. Say search is unavailable, do not say there are no such beans.
         A status of searchUnavailable means the web search failed to run. Say search is unavailable, do not say the information doesn't exist.
+        searchWeb biases towards where the user is. searchedNear names the town it used, and a nil searchedNear means location was unavailable, so the results are not local. Say which of the two it was rather than implying a shop is nearby when you do not know that. Never ask the user where they are; the tool already knows or it does not.
         A status of locationUnavailable means the search did not run. Say location is unavailable, do not say there are none nearby.
 
         Cite the bean names you relied on. Keep answers short.
@@ -103,8 +104,13 @@ class CoffeeAgent {
         self.compareTool = CompareTastingTool(cupboard: cupboard, store: store, log: cardLog)
         self.choicesTool = OfferChoicesTool(log: cardLog)
         self.flashcardTool = FlashcardTool(log: cardLog)
-        self.webSearchTool = WebSearchTool(apiKey: loadTavilyKey(), cards: cardLog)
-        self.nearbyPlacesTool = NearbyPlacesTool(locationProvider: LocationProvider(), log: placeLog, cards: cardLog)
+        // One provider and one resolver behind both tools, so the map search
+        // and the web search agree on where the user is and the coordinate is
+        // requested once.
+        let locationProvider = LocationProvider()
+        let places = PlaceResolver(coordinates: locationProvider)
+        self.webSearchTool = WebSearchTool(apiKey: loadTavilyKey(), cards: cardLog, place: places)
+        self.nearbyPlacesTool = NearbyPlacesTool(locationProvider: locationProvider, log: placeLog, cards: cardLog)
         Log.write(.corpus, "loaded \(profiles.count) profiles from \(resource).json")
     }
 
