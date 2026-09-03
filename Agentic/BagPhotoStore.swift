@@ -70,6 +70,14 @@ nonisolated enum BagPhotoStore {
         return filename
     }
 
+    /// `nonisolated async` for the same reason `save` is: the resize runs off
+    /// the caller's actor. Called as soon as OCR is done, so the confirm card
+    /// holds a few megabytes while the user checks the fields rather than the
+    /// seventy a full camera frame decodes to.
+    static func previewSized(_ image: UIImage) async -> UIImage {
+        downscaled(image)
+    }
+
     /// Best effort: a photo left behind is clutter, but failing to delete a
     /// bag because its picture would not unlink is worse.
     static func delete(_ filename: String?) {

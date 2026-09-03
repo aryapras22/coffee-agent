@@ -395,9 +395,14 @@ struct ContentView: View {
             // Never throws: an Indonesian label the model refuses still comes
             // back as a draft filled from the label vocabulary alone.
             let draft = await BagScanner.draft(fromOCR: text)
-            Log.write(.scan, "ready for confirmation")
+
+            // Vision has read it, so nothing downstream needs the full frame.
+            // Holding one in view state while the user checks a dozen fields
+            // is tens of megabytes for a picture shown at 110 points.
+            let preview = await BagPhotoStore.previewSized(captured)
+            Log.write(.scan, "ready for confirmation, preview \(Int(preview.size.width))x\(Int(preview.size.height))")
             bagScan = nil
-            pendingBag = PendingBag(draft: draft, ocrText: text, photo: captured)
+            pendingBag = PendingBag(draft: draft, ocrText: text, photo: preview)
         } catch {
             Log.write(.failure, "scan failed: \(error)")
             bagScan = BagScan(

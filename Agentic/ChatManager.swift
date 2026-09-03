@@ -278,6 +278,13 @@ final class ChatManager {
         failureID = nil
         isResponding = true
         liveSteps = []
+
+        // Before the turn, not only after it. Compacting on the way out left
+        // the next turn free to start at the threshold with a quarter of the
+        // window for its prompt, every tool call, every tool result and the
+        // reply, which on a nine tool session is not enough.
+        await compactIfNeeded()
+
         trackSteps(of: modelSession)
         await agent.placeLog.reset()
         await agent.cardLog.reset()
@@ -307,7 +314,7 @@ final class ChatManager {
 
             try context.save()
             refreshSessions()
-            await summarizeIfNeeded()
+            await compactIfNeeded()
         } catch {
             // The user's question was still asked, so it stays persisted even
             // though the model failed to answer it — only the failure itself
@@ -346,14 +353,25 @@ final class ChatManager {
         Double(usedTokens) >= Double(budget) * compactionThreshold
     }
 
-    /// Both turns are already saved by the time this runs, so a throw here
-    /// leaves the exchange durably stored with a stale-or-absent summary; the
-    /// next turn re-evaluates the threshold and retries.
-    private func summarizeIfNeeded() async {
+    /// Safe to call at either end of a turn. Running it before means a turn
+    /// starts with room; running it after means the reply that just arrived is
+    /// folded in rather than waiting for the next send.
+    ///
+    /// A throw here leaves the exchange durably stored with a stale or absent
+    /// summary, because both turns are saved before the post-turn call runs.
+    /// The next attempt re-evaluates the threshold and retries.
+    private func compactIfNeeded() async {
         guard
             let used = await refreshContextUsage(),
             Self.shouldCompact(usedTokens: used, budget: SystemLanguageModel.default.contextSize)
         else { return }
+
+        guard !chatSession.messages.isEmpty else {
+            // Nothing said yet, so the window is all instructions and tool
+            // schemas. Summarising an empty conversation would free nothing.
+            Log.write(.agent, "over the threshold on instructions alone, nothing to compact")
+            return
+        }
 
         let sorted = chatSession.messages.sorted { $0.timestamp < $1.timestamp }
         let transcriptText = sorted.map { "\($0.role.rawValue): \($0.content)" }.joined(separator: "\n")
