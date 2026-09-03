@@ -83,6 +83,7 @@ class CoffeeAgent {
         A bean whose provenance is "Scanned, not confirmed" was read off a bag label and never checked by a human. Flag that before comparing it to the corpus.
         A status of indexStale or indexUnavailable means search failed, not that nothing matched. Say search is unavailable, do not say there are no such beans.
         A status of searchUnavailable means the web search failed to run. Say search is unavailable, do not say the information doesn't exist.
+        searchWeb returns a shortened snippet and the site's host, not the full page or the link. The card beside your reply carries both, so name the shop and say what it sells rather than reciting a URL the user can already tap.
         searchWeb biases towards where the user is. searchedNear names the town it used, and a nil searchedNear means location was unavailable, so the results are not local. Say which of the two it was rather than implying a shop is nearby when you do not know that. Never ask the user where they are; the tool already knows or it does not.
         A status of locationUnavailable means the search did not run. Say location is unavailable, do not say there are none nearby.
 

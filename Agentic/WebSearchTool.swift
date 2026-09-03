@@ -15,10 +15,16 @@ enum WebSearchStatus {
     case searchUnavailable
 }
 
+/// What the model sees of a result, which is deliberately less than the user
+/// does. The full snippet and the link are on the card next to the reply, so
+/// spending context on them buys nothing: the model cannot follow a link, and
+/// a page's first paragraph is mostly boilerplate.
 @Generable
 struct WebSearchHit {
     var title: String
-    var url: String
+    /// The host rather than the full URL. Enough to say who is selling, at a
+    /// fraction of the tokens, and the card carries the address itself.
+    var source: String
     var snippet: String
 }
 
@@ -76,6 +82,29 @@ struct WebSearchTool: Tool {
         self.place = place
         self.apiKey = apiKey
         self.fetcher = fetcher
+    }
+
+    /// A whole page summary is mostly preamble, and five of them can take a
+    /// third of what is left of the context window after the instructions and
+    /// the tool schemas. Cut on a word boundary so the tail is a readable
+    /// clause rather than half a word.
+    static let snippetLimit = 180
+
+    static func condensed(_ snippet: String, limit: Int = snippetLimit) -> String {
+        let trimmed = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > limit else { return trimmed }
+
+        let cut = trimmed.prefix(limit)
+        guard let lastSpace = cut.lastIndex(of: " ") else { return cut + "…" }
+        return cut[..<lastSpace].trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// The host alone, with the leading www dropped. Falls back to the whole
+    /// string when it will not parse, because a slightly long source beats
+    /// telling the model nothing about where a result came from.
+    static func host(of url: String) -> String {
+        guard let host = URL(string: url)?.host() else { return url }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     /// Only the town and country go out, never a coordinate. Skipped entirely
@@ -150,10 +179,25 @@ struct WebSearchTool: Tool {
             return WebSearchOutcome(status: .searchUnavailable, results: [], searchedNear: near?.described)
         }
 
-        let hits = decoded.results.map { WebSearchHit(title: $0.title, url: $0.url, snippet: $0.content) }
+        let hits = decoded.results.map {
+            WebSearchHit(
+                title: $0.title,
+                source: Self.host(of: $0.url),
+                snippet: Self.condensed($0.content)
+            )
+        }
 
+        // The card gets the full snippet and the real link: the trimming is
+        // there to protect the model's context, not the reader's.
         await cards?.append(
-            hits.map { .seller(SellerCard(name: $0.title, detail: $0.snippet, url: $0.url, source: "via web search")) }
+            decoded.results.map {
+                .seller(SellerCard(name: $0.title, detail: $0.content, url: $0.url, source: "via web search"))
+            }
+        )
+        Log.write(
+            .tool,
+            "searchWeb \(hits.count) results, snippets \(decoded.results.reduce(0) { $0 + $1.content.count })"
+                + " chars trimmed to \(hits.reduce(0) { $0 + $1.snippet.count })"
         )
         return WebSearchOutcome(
             status: hits.isEmpty ? .noResultsFound : .resultsFound,
