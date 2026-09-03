@@ -477,90 +477,110 @@ struct BagConfirmCard: View {
     }
 }
 
-/// Capture and read, and nothing else. This is a modal only because
-/// `UIImagePickerController` cannot be embedded in a view; the moment the
-/// scan has text, the flow hands the draft back and gets out of the way so
-/// the confirm step can happen in the conversation.
-struct ScanFlowView: View {
-    let manager: CupboardManager
-    let onExtracted: (BagScanner.Draft, String, UIImage?) -> Void
+/// Asking for the photograph, and reporting what came back off it. Drawn in
+/// the transcript like every other step of adding a bag, so the only thing
+/// that still covers the screen is the camera frame itself, which has to:
+/// `UIImagePickerController` cannot be embedded in a view.
+///
+/// Holds no scan state of its own. The stage, the image and the failure live
+/// with the chat, because the camera cover has to be attached somewhere that
+/// cannot be torn down while the camera is up, and a card in a lazy stack is
+/// not that place.
+struct BagScanCard: View {
+    enum Stage {
+        case capture, reading, extracting
 
-    @Environment(\.dismiss) private var dismiss
-    @State private var image: UIImage?
-    @State private var stage = Stage.capture
-    @State private var failure: String?
-    @State private var showingCamera = false
-    @State private var pendingImage: UIImage?
-    @State private var pickerItem: PhotosPickerItem?
-
-    private enum Stage { case capture, reading, extracting }
-
-    var body: some View {
-        NavigationStack {
-            capture
+        var caption: String? {
+            switch self {
+            case .capture: nil
+            case .reading: "Reading the label"
+            case .extracting: "Pulling out the fields"
+            }
         }
     }
 
-    private var capture: some View {
-        VStack(alignment: .leading, spacing: Theme.lg) {
+    let stage: Stage
+    let image: UIImage?
+    let failure: String?
+    let onTakePhoto: () -> Void
+    let onImage: (UIImage) -> Void
+    let onEnterByHand: () -> Void
+    let onCancel: () -> Void
+
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var pickerFailure: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.md) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Scan a bag").font(Theme.display).foregroundStyle(Theme.ink)
+                Spacer(minLength: Theme.md)
+                Button("Cancel") { onCancel() }
+                    .font(Theme.label)
+                    .foregroundStyle(Theme.inkMuted)
+            }
+
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 220)
-                    .clipShape(.rect(cornerRadius: Theme.bubbleRadius))
+                    .scaledToFill()
+                    .frame(height: 140)
+                    .clipped()
+                    .clipShape(.rect(cornerRadius: 6))
             }
 
-            switch stage {
-            case .capture:
+            if let caption = stage.caption {
+                HStack(spacing: Theme.sm) {
+                    ProgressView().controlSize(.small).tint(Theme.inkMuted)
+                    Text(caption).font(Theme.control).foregroundStyle(Theme.inkMuted)
+                }
+            } else {
                 Text("Photograph the label straight on, filling the frame. Matte and curved bags read badly, so you will get a chance to correct every field.")
                     .font(Theme.control)
                     .foregroundStyle(Theme.inkMuted)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Button("Take a photo") { showingCamera = true }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
-
-                PhotosPicker("Choose from library", selection: $pickerItem, matching: .images)
-                    .tint(Theme.accent)
-
-            case .reading, .extracting:
                 HStack(spacing: Theme.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(stage == .reading ? "Reading the label" : "Pulling out the fields")
+                    Button("Take a photo") { onTakePhoto() }
                         .font(Theme.control)
-                        .foregroundStyle(Theme.inkMuted)
+                        .padding(.horizontal, Theme.md)
+                        .padding(.vertical, Theme.sm + 2)
+                        .background(Theme.accent, in: .capsule)
+                        .foregroundStyle(Theme.paper)
+
+                    PhotosPicker(selection: $pickerItem, matching: .images) {
+                        Text("Choose from library")
+                            .font(Theme.control)
+                            .foregroundStyle(Theme.accent)
+                            .padding(.horizontal, Theme.md)
+                            .padding(.vertical, Theme.sm + 2)
+                            .overlay(Capsule().stroke(Theme.rule, lineWidth: Theme.hairline))
+                    }
                 }
             }
 
-            if let failure {
-                Text(failure).font(Theme.trace).foregroundStyle(Theme.danger)
-            }
+            if let message = failure ?? pickerFailure {
+                Text(message)
+                    .font(Theme.trace)
+                    .foregroundStyle(Theme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: 0)
+                // Offered only once a read has actually failed, and offered
+                // here rather than left to the menu: telling someone they can
+                // still type it in without giving them somewhere to type is
+                // how a bad photo ends up costing them the bag.
+                Button("Enter it by hand instead") { onEnterByHand() }
+                    .font(Theme.control)
+                    .foregroundStyle(Theme.accent)
+            }
         }
-        .padding(Theme.lg)
+        .padding(Theme.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.paper)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Theme.paper, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Scan a bag").font(Theme.display).foregroundStyle(Theme.ink)
-            }
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }.tint(Theme.inkMuted)
-            }
-        }
-        // Processing waits for the camera to finish dismissing, so the reading
-        // stage is not racing a cover that is still on screen.
-        .fullScreenCover(isPresented: $showingCamera, onDismiss: processPendingCapture) {
-            CameraPicker { captured in
-                image = captured
-                pendingImage = captured
-            }
-            .ignoresSafeArea()
-        }
+        .background(Theme.paperRaised, in: .rect(cornerRadius: Theme.bubbleRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.bubbleRadius)
+                .stroke(Theme.rule, lineWidth: Theme.hairline)
+        )
         .onChange(of: pickerItem) {
             guard let pickerItem else { return }
             Task {
@@ -569,45 +589,12 @@ struct ScanFlowView: View {
                     let loaded = UIImage(data: data)
                 else {
                     Log.write(.failure, "photo library item could not be loaded")
-                    failure = "That image could not be loaded."
+                    pickerFailure = "That image could not be loaded."
                     return
                 }
-                image = loaded
-                await process(loaded)
+                pickerFailure = nil
+                onImage(loaded)
             }
-        }
-    }
-
-    private func processPendingCapture() {
-        guard let pendingImage else { return }
-        self.pendingImage = nil
-        Task { await process(pendingImage) }
-    }
-
-    private func process(_ captured: UIImage) async {
-        guard let cgImage = captured.cgImage else {
-            failure = "That image could not be read."
-            return
-        }
-
-        Log.write(.scan, "processing a \(Int(captured.size.width))x\(Int(captured.size.height)) capture")
-        failure = nil
-        stage = .reading
-        do {
-            let text = try await BagScanner.readText(from: cgImage)
-            stage = .extracting
-            // Never throws: an Indonesian label the model refuses still comes
-            // back as a draft filled from the label vocabulary alone.
-            let draft = await BagScanner.draft(fromOCR: text)
-            Log.write(.scan, "ready for confirmation, handing the draft to the thread")
-            onExtracted(draft, text, captured)
-            dismiss()
-        } catch {
-            // A failed read still leaves the manual path open rather than
-            // ending the flow, so a bad photo does not cost the user the bag.
-            Log.write(.failure, "scan failed: \(error)")
-            stage = .capture
-            failure = "\(error.localizedDescription) You can still enter the bag by hand."
         }
     }
 }

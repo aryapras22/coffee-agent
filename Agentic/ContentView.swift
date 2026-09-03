@@ -41,13 +41,16 @@ struct ContentView: View {
     /// a brew replaces the setup panel with the timer rather than stacking.
     @State private var panel: Panel?
     @State private var pendingBag: PendingBag?
+    @State private var bagScan: BagScan?
+    @State private var showingCamera = false
+    @State private var pendingCapture: UIImage?
     @FocusState private var isComposerFocused: Bool
 
-    /// The two things that have to cover the screen: a camera, and a list you
-    /// delete rows from. Everything else the agent used to hand off to a sheet
-    /// now happens pinned above the composer, in the conversation.
+    /// The one screen still worth covering the chat with: a list you delete
+    /// rows from. Everything else the agent used to hand off to a sheet now
+    /// happens in the conversation.
     enum Workbench: String, Identifiable {
-        case cupboard, scan
+        case cupboard
 
         var id: String { rawValue }
     }
@@ -56,13 +59,20 @@ struct ContentView: View {
         case brewSetup
     }
 
-    /// A scanned or blank bag waiting to be checked. Held here rather than in
-    /// the scan sheet because the confirm step is drawn in the transcript, and
-    /// the sheet is gone by the time it appears.
+    /// A scanned or blank bag waiting to be checked.
     struct PendingBag {
         var draft: BagScanner.Draft
         var ocrText: String?
         var photo: UIImage?
+    }
+
+    /// A scan in progress. Held here rather than on the card because the
+    /// camera cover is attached to the chat, and a card in a lazy stack can be
+    /// torn down under it.
+    struct BagScan {
+        var stage: BagScanCard.Stage = .capture
+        var image: UIImage?
+        var failure: String?
     }
 
     var body: some View {
@@ -107,10 +117,6 @@ struct ContentView: View {
                 switch destination {
                 case .cupboard:
                     CupboardView(manager: cupboard)
-                case .scan:
-                    ScanFlowView(manager: cupboard) { draft, ocrText, photo in
-                        pendingBag = PendingBag(draft: draft, ocrText: ocrText, photo: photo)
-                    }
                 }
             }
         }
@@ -237,6 +243,16 @@ struct ContentView: View {
             replies(for: model)
             composer(for: model)
         }
+        // Attached here, not to the card: the cover has to outlive whatever
+        // presented it, and reading waits for the camera to finish dismissing
+        // so the confirm card is not racing a cover still on screen.
+        .fullScreenCover(isPresented: $showingCamera, onDismiss: readPendingCapture) {
+            CameraPicker { captured in
+                bagScan?.image = captured
+                pendingCapture = captured
+            }
+            .ignoresSafeArea()
+        }
         .onChange(of: cupboard?.activeBrew?.phase) { _, phase in
             guard phase == .finished, let cupboard, let timer = cupboard.activeBrew else { return }
             model.post(
@@ -276,11 +292,8 @@ struct ContentView: View {
                 Log.write(.ui, "opened the brew setup panel")
                 panel = .brewSetup
             }
-            Button("Scan a bag", systemImage: "camera") { open(.scan) }
-            Button("Add a bag by hand", systemImage: "square.and.pencil") {
-                Log.write(.ui, "opened a blank bag form in the thread")
-                pendingBag = PendingBag(draft: BagScanner.Draft())
-            }
+            Button("Scan a bag", systemImage: "camera") { startScan() }
+            Button("Add a bag by hand", systemImage: "square.and.pencil") { enterBagByHand() }
             Button("My cupboard", systemImage: "archivebox") { open(.cupboard) }
         } label: {
             Image(systemName: "cup.and.saucer")
@@ -318,6 +331,54 @@ struct ContentView: View {
                 manager: cupboard,
                 onStarted: { panel = nil },
                 onClose: { panel = nil }
+            )
+        }
+    }
+
+    private func startScan() {
+        Log.write(.ui, "opened the scan card in the thread")
+        pendingBag = nil
+        bagScan = BagScan()
+    }
+
+    private func enterBagByHand() {
+        Log.write(.ui, "opened a blank bag form in the thread")
+        bagScan = nil
+        pendingBag = PendingBag(draft: BagScanner.Draft())
+    }
+
+    private func readPendingCapture() {
+        guard let pendingCapture else { return }
+        self.pendingCapture = nil
+        Task { await read(pendingCapture) }
+    }
+
+    /// OCR, then extraction, then hand off to the confirm card. A failed read
+    /// leaves the scan card standing rather than ending the flow, so a bad
+    /// photo does not cost the user the bag.
+    private func read(_ captured: UIImage) async {
+        guard let cgImage = captured.cgImage else {
+            bagScan?.failure = "That image could not be read."
+            return
+        }
+
+        Log.write(.scan, "processing a \(Int(captured.size.width))x\(Int(captured.size.height)) capture")
+        bagScan = BagScan(stage: .reading, image: captured)
+        do {
+            let text = try await BagScanner.readText(from: cgImage)
+            bagScan?.stage = .extracting
+            // Never throws: an Indonesian label the model refuses still comes
+            // back as a draft filled from the label vocabulary alone.
+            let draft = await BagScanner.draft(fromOCR: text)
+            Log.write(.scan, "ready for confirmation")
+            bagScan = nil
+            pendingBag = PendingBag(draft: draft, ocrText: text, photo: captured)
+        } catch {
+            Log.write(.failure, "scan failed: \(error)")
+            bagScan = BagScan(
+                stage: .capture,
+                image: captured,
+                failure: "\(error.localizedDescription) You can still enter the bag by hand."
             )
         }
     }
@@ -378,7 +439,7 @@ struct ContentView: View {
     private func send(_ reply: String, on model: ChatManager) {
         switch reply {
         case "Scan a bag":
-            open(.scan)
+            startScan()
         case "Start brewing":
             panel = .brewSetup
         case "Review my brews":
@@ -416,6 +477,20 @@ struct ContentView: View {
                         thinking(for: model)
                     }
 
+                    if let scan = bagScan {
+                        BagScanCard(
+                            stage: scan.stage,
+                            image: scan.image,
+                            failure: scan.failure,
+                            onTakePhoto: { showingCamera = true },
+                            onImage: { captured in Task { await read(captured) } },
+                            onEnterByHand: { enterBagByHand() },
+                            onCancel: { bagScan = nil }
+                        )
+                        .id(Self.scanID)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+                    }
+
                     if let pending = pendingBag, let cupboard {
                         BagConfirmCard(
                             manager: cupboard,
@@ -444,12 +519,14 @@ struct ContentView: View {
                 .animation(Theme.enter, value: model.displayMessages.count)
                 .animation(Theme.enter, value: model.liveSteps.count)
                 .animation(Theme.enter, value: pendingBag != nil)
+                .animation(Theme.enter, value: bagScan?.stage)
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: model.displayMessages.count) { scrollToLatest(proxy) }
             .onChange(of: model.isResponding) { scrollToLatest(proxy) }
             .onChange(of: model.liveSteps.count) { scrollToLatest(proxy) }
             .onChange(of: pendingBag != nil) { scrollToLatest(proxy) }
+            .onChange(of: bagScan?.stage) { scrollToLatest(proxy) }
         }
     }
 
@@ -582,6 +659,7 @@ struct ContentView: View {
 
     private static let bottomID = "bottom"
     private static let confirmID = "confirm-bag"
+    private static let scanID = "scan-bag"
     private static let gaugeWidth: CGFloat = 44
 }
 
