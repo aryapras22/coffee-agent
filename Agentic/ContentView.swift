@@ -50,7 +50,7 @@ struct ContentView: View {
     /// rows from. Everything else the agent used to hand off to a sheet now
     /// happens in the conversation.
     enum Workbench: String, Identifiable {
-        case cupboard
+        case cupboard, memory
 
         var id: String { rawValue }
     }
@@ -120,6 +120,10 @@ struct ContentView: View {
                 switch destination {
                 case .cupboard:
                     CupboardView(manager: cupboard)
+                case .memory:
+                    if let model {
+                        MemoryView(model: model)
+                    }
                 }
             }
         }
@@ -669,24 +673,34 @@ struct ContentView: View {
         let usage = min(model.contextUsage, 1)
         let isCompacting = usage >= ChatManager.compactionThreshold
 
-        return HStack(spacing: Theme.sm) {
-            Text("memory \(usage.formatted(.percent.precision(.fractionLength(0))))")
-                .font(Theme.trace)
-                .foregroundStyle(isCompacting ? Theme.accent : Theme.inkMuted)
+        return Button {
+            open(.memory)
+        } label: {
+            HStack(spacing: Theme.sm) {
+                Text("memory \(usage.formatted(.percent.precision(.fractionLength(0))))")
+                    .font(Theme.trace)
+                    .foregroundStyle(isCompacting ? Theme.accent : Theme.inkMuted)
 
-            Capsule()
-                .fill(Theme.rule)
-                .frame(width: Self.gaugeWidth, height: 3)
-                .overlay(alignment: .leading) {
-                    Capsule()
-                        .fill(isCompacting ? Theme.accent : Theme.inkMuted)
-                        .frame(width: Self.gaugeWidth * usage)
-                }
+                Capsule()
+                    .fill(Theme.rule)
+                    .frame(width: Self.gaugeWidth, height: 3)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(isCompacting ? Theme.accent : Theme.inkMuted)
+                            .frame(width: Self.gaugeWidth * usage)
+                    }
+            }
+            .padding(.horizontal, Theme.sm)
+            .frame(minHeight: 44)
+            .contentShape(.rect)
         }
+        .buttonStyle(PressScale())
         .animation(Theme.enter, value: usage)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Memory used")
         .accessibilityValue(usage.formatted(.percent.precision(.fractionLength(0))))
+        .accessibilityHint("Shows what the agent is currently carrying")
+        .accessibilityAddTraits(.isButton)
     }
 
     /// The composer, the confirm card and both brew panels each own their own
@@ -782,6 +796,130 @@ private struct MessageRow: View {
             Spacer(minLength: 0)
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// What the gauge is a percentage of. The number alone says how full the
+/// window is; this says with what, which is the part that changes what to do
+/// about it. A window mostly full of tool results is fixed by asking a
+/// narrower question, one full of conversation by starting a new chat.
+private struct MemoryView: View {
+    let model: ChatManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var report: ContextReport?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let report {
+                    content(report)
+                } else {
+                    ProgressView().tint(Theme.inkMuted)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .background(Theme.paper)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.paper, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Memory").font(Theme.display).foregroundStyle(Theme.ink)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") { dismiss() }.tint(Theme.accent)
+                }
+            }
+        }
+        .task { report = await model.contextReport() }
+    }
+
+    private func content(_ report: ContextReport) -> some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: Theme.sm) {
+                    Text(report.usage.formatted(.percent.precision(.fractionLength(0))))
+                        .font(.system(size: 44, weight: .light, design: .serif))
+                        .foregroundStyle(report.usage >= ChatManager.compactionThreshold ? Theme.accent : Theme.ink)
+
+                    Text("\(report.usedTokens.formatted()) of \(report.budget.formatted()) tokens")
+                        .font(Theme.control)
+                        .foregroundStyle(Theme.inkMuted)
+
+                    Text("\(report.fixedOverhead.formatted()) of those are spent before you say anything, on the agent's instructions and its tool definitions. That leaves about \(report.roomForConversation.formatted()) for the conversation itself.")
+                        .font(Theme.trace)
+                        .foregroundStyle(Theme.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(report.usage >= ChatManager.compactionThreshold
+                        ? "Over the threshold, so the earliest turns are being summarised away after each reply."
+                        : "At \(ChatManager.compactionThreshold.formatted(.percent.precision(.fractionLength(0)))) the earliest turns get summarised to make room.")
+                        .font(Theme.trace)
+                        .foregroundStyle(Theme.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, Theme.xs)
+            }
+            .listRowBackground(Theme.paper)
+
+            Section {
+                ForEach(report.sections) { section in
+                    row(section, largest: report.sections.first?.tokens ?? 1)
+                }
+            } header: {
+                Text("What is in there")
+            } footer: {
+                Text("Counted one kind at a time, so these do not add up to the total: each count carries a little of the transcript's own framing.")
+            }
+            .listRowBackground(Theme.paper)
+
+            if let summary = report.summary {
+                Section {
+                    Text(summary)
+                        .font(Theme.reading)
+                        .foregroundStyle(Theme.ink)
+                } header: {
+                    Text("Standing in for earlier turns")
+                } footer: {
+                    Text("Those turns are no longer held word for word. The last \(report.recentMessagesReplayed) messages are replayed verbatim alongside this.")
+                }
+                .listRowBackground(Theme.paper)
+            }
+        }
+        .listStyle(.plain)
+    }
+
+    private func row(_ section: ContextReport.Section, largest: Int) -> some View {
+        VStack(alignment: .leading, spacing: Theme.xs) {
+            HStack {
+                Text(section.id).font(Theme.control).foregroundStyle(Theme.ink)
+                Spacer(minLength: Theme.md)
+                Text("\(section.tokens.formatted()) tokens")
+                    .font(Theme.label)
+                    .foregroundStyle(Theme.inkMuted)
+            }
+
+            Capsule()
+                .fill(Theme.rule)
+                .frame(height: 3)
+                .overlay(alignment: .leading) {
+                    GeometryReader { geometry in
+                        Capsule()
+                            .fill(Theme.accent)
+                            .frame(width: geometry.size.width * share(section.tokens, of: largest))
+                    }
+                }
+
+            Text(section.entries == 1 ? "1 entry" : "\(section.entries) entries")
+                .font(Theme.trace)
+                .foregroundStyle(Theme.inkMuted)
+        }
+        .padding(.vertical, Theme.xs)
+    }
+
+    /// Scaled against the largest section rather than the total, so the
+    /// smaller kinds stay visible instead of collapsing to a hairline.
+    private func share(_ tokens: Int, of largest: Int) -> Double {
+        largest > 0 ? Double(tokens) / Double(largest) : 0
     }
 }
 

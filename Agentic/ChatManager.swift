@@ -10,6 +10,36 @@ import FoundationModels
 import Observation
 import SwiftData
 
+/// What the model is actually carrying, for the memory gauge to expand into.
+/// The percentage on its own says how full the context is but not with what,
+/// and the answer matters: a window filled with tool results behaves very
+/// differently from one filled with conversation.
+nonisolated struct ContextReport: Sendable {
+    nonisolated struct Section: Identifiable, Sendable {
+        let id: String
+        let tokens: Int
+        let entries: Int
+    }
+
+    let usedTokens: Int
+    let budget: Int
+    /// What a brand new session costs before a word is said: the persona plus
+    /// every tool's argument schema. It never goes away, so the real room for
+    /// conversation is the budget minus this.
+    let fixedOverhead: Int
+    /// Measured per group, so these do not sum to `usedTokens`: each count
+    /// carries a little of the transcript's own framing. Shown as shares
+    /// rather than as an addition for that reason.
+    let sections: [Section]
+    /// The compaction summary standing in for turns no longer held verbatim.
+    let summary: String?
+    let recentMessagesReplayed: Int
+
+    var usage: Double { budget > 0 ? Double(usedTokens) / Double(budget) : 0 }
+
+    var roomForConversation: Int { max(budget - fixedOverhead, 0) }
+}
+
 /// Owns everything a chat needs: the active Chat Session, the persistence
 /// context, and the rebuildable Model Session that answers prompts. Replaces
 /// `ChatViewModel`. Kept on `@MainActor` alongside its `ModelContext` so the
@@ -180,6 +210,53 @@ final class ChatManager {
         try? context.save()
         refreshSessions()
         Log.write(.agent, "posted an app-authored reply, \(cards.count) cards")
+    }
+
+    /// One count for the whole transcript, which is exact, plus one per kind
+    /// of entry, which is not. Five extra token counts at most, and only when
+    /// someone opens the gauge.
+    func contextReport() async -> ContextReport? {
+        let model = SystemLanguageModel.default
+        guard let used = try? await model.tokenCount(for: modelSession.transcript) else {
+            Log.write(.failure, "context report unavailable, token count failed")
+            return nil
+        }
+
+        var grouped: [String: [Transcript.Entry]] = [:]
+        for entry in modelSession.transcript {
+            grouped[Self.label(for: entry), default: []].append(entry)
+        }
+
+        var sections: [ContextReport.Section] = []
+        for (label, entries) in grouped {
+            let tokens = (try? await model.tokenCount(for: Transcript(entries: entries))) ?? 0
+            sections.append(ContextReport.Section(id: label, tokens: tokens, entries: entries.count))
+        }
+
+        // Measured rather than assumed: the tool schemas dominate it, and they
+        // change whenever a tool is added.
+        let overhead = (try? await model.tokenCount(for: agent.makeSession().transcript)) ?? 0
+
+        Log.write(.agent, "context report \(used)/\(model.contextSize), \(overhead) fixed, \(sections.count) kinds")
+        return ContextReport(
+            usedTokens: used,
+            budget: model.contextSize,
+            fixedOverhead: overhead,
+            sections: sections.sorted { $0.tokens > $1.tokens },
+            summary: chatSession.summary,
+            recentMessagesReplayed: min(chatSession.messages.count, Self.maxRawMessages)
+        )
+    }
+
+    private static func label(for entry: Transcript.Entry) -> String {
+        switch entry {
+        case .instructions: "Instructions"
+        case .prompt: "Your messages"
+        case .response: "Replies"
+        case .toolCalls: "Tool calls"
+        case .toolOutput: "Tool results"
+        @unknown default: "Other"
+        }
     }
 
     func prepareIndex() async {
