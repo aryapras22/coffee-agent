@@ -67,6 +67,12 @@ final class ChatManager {
     /// and break `ForEach` identity and scroll-to-bottom.
     @ObservationIgnored private var failureID: UUID?
 
+    /// Which specialist is answering. Held across turns rather than resolved
+    /// per turn: most conversations stay in one corner of the app, and
+    /// rebuilding the session on every message would leave the model reading a
+    /// recap instead of the exchange it just had.
+    private(set) var specialty = Specialty.general
+
     private let context: ModelContext
     private let agent: CoffeeAgent
     @ObservationIgnored private var modelSession: LanguageModelSession
@@ -83,6 +89,7 @@ final class ChatManager {
         let session = Self.mostRecentOrNewSession(in: context)
         self.chatSession = session
         self.modelSession = agent.makeSession(recap: Self.recap(for: session, maxRawMessages: Self.maxRawMessages))
+
         refreshSessions()
         Task { await refreshContextUsage() }
     }
@@ -90,8 +97,18 @@ final class ChatManager {
     /// Every replacement of the model session changes what the context holds,
     /// so the two always move together.
     private func rebuildSession(recap: String?) {
-        modelSession = agent.makeSession(recap: recap)
+        modelSession = agent.makeSession(for: specialty, recap: recap)
         Task { await refreshContextUsage() }
+    }
+
+    /// Switching costs a session rebuild, so it only happens on an actual
+    /// change. The recap carries the conversation across, the same way it does
+    /// after compaction.
+    private func switchSpecialty(to next: Specialty) {
+        guard next != specialty else { return }
+        Log.write(.agent, "specialty \(specialty.rawValue) -> \(next.rawValue)")
+        specialty = next
+        rebuildSession(recap: Self.recap(for: chatSession, maxRawMessages: Self.maxRawMessages))
     }
 
     /// Hands back the raw count as well, so a caller that also has to decide
@@ -269,7 +286,10 @@ final class ChatManager {
         }
     }
 
-    func send(_ text: String? = nil) async {
+    /// `routedTo` is passed when the app already knows: every reply chip and
+    /// menu item is a string this app wrote, so classifying it would be paying
+    /// a model call to rediscover something that was never in doubt.
+    func send(_ text: String? = nil, routedTo known: Specialty? = nil) async {
         let question = (text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isResponding else { return }
 
@@ -278,6 +298,16 @@ final class ChatManager {
         failureID = nil
         isResponding = true
         liveSteps = []
+
+        // `??` cannot span an await, and routing must not run when the app
+        // already knows the answer.
+        let destination: Specialty
+        if let known {
+            destination = known
+        } else {
+            destination = await agent.route(question)
+        }
+        switchSpecialty(to: destination)
 
         // Before the turn, not only after it. Compacting on the way out left
         // the next turn free to start at the threshold with a quarter of the

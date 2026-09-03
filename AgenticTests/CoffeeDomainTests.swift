@@ -748,3 +748,51 @@ struct BagScanGrindTests {
         #expect(BagScanner.deterministicFields(from: "Arabika Gayo\n200 g").grade == "")
     }
 }
+
+struct SpecialtyRoutingTests {
+    @Test("every standing reply the app writes routes without asking the model")
+    func standingRepliesRouteLocally() {
+        for reply in QuickReplies.opening {
+            #expect(QuickReplies.specialty(for: reply) != nil || ContentViewIntents.handledInApp.contains(reply))
+        }
+    }
+
+    @Test("anything the app did not write goes to the router")
+    func freeTextIsNotGuessed() {
+        #expect(QuickReplies.specialty(for: "what is giling basah") == nil)
+        #expect(QuickReplies.specialty(for: "") == nil)
+    }
+
+    @Test("a specialist is told about its own tools and not about the others")
+    func briefingsDoNotLeak() {
+        #expect(Specialty.beans.instructions.contains("searchBeanCorpus"))
+        #expect(!Specialty.beans.instructions.contains("findNearbyCafes"))
+        #expect(Specialty.cupboard.instructions.contains("adviseNextGrind"))
+        #expect(!Specialty.cupboard.instructions.contains("matchTasteProfile"))
+        #expect(Specialty.shopping.instructions.contains("searchWeb"))
+        #expect(!Specialty.shopping.instructions.contains("adviseNextGrind"))
+    }
+
+    @Test("every specialist still carries the rules that are not about tools")
+    func coreSurvivesTheSplit() {
+        for specialty in Specialty.allCases {
+            #expect(specialty.instructions.contains("moka pot"))
+            #expect(specialty.instructions.contains("only do coffee"))
+        }
+    }
+
+    @Test("the generalist holds every tool, so unsure routing loses nothing")
+    func generalIsASupersetOfTheSpecialists() throws {
+        let agent = try CoffeeAgent()
+        let general = Set(agent.tools(for: .general).map(\.name))
+        for specialty in Specialty.allCases {
+            #expect(Set(agent.tools(for: specialty).map(\.name)).isSubset(of: general))
+        }
+        #expect(agent.tools(for: .general).count == 7)
+    }
+}
+
+/// The replies the app answers itself rather than sending anywhere.
+enum ContentViewIntents {
+    static let handledInApp: Set<String> = ["Scan a bag", "Start brewing", "Teach me something", "Another card", "Review my brews"]
+}

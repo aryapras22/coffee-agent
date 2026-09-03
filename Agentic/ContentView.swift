@@ -497,7 +497,7 @@ struct ContentView: View {
             guard let session = cupboard?.awaitingReview.first else { break }
             cupboard?.beginReview(of: session)
         default:
-            Task { await model.send(reply) }
+            Task { await model.send(reply, routedTo: QuickReplies.specialty(for: reply)) }
         }
     }
 

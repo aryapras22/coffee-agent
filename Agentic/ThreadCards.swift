@@ -186,6 +186,26 @@ nonisolated enum QuickReplies {
         "Where can I buy beans?",
     ]
 
+    /// Where each standing reply belongs. These strings are written by this
+    /// app, so routing them is a lookup rather than a judgement, and paying a
+    /// model call to rediscover it would be waste.
+    ///
+    /// Nil means genuinely ambiguous, which goes to the router like any free
+    /// text would.
+    static func specialty(for reply: String) -> Specialty? {
+        switch reply {
+        case "Recommend a bean", "Teach me something", "Another card":
+            .beans
+        case "What do I have?", "Compare my notes", "What grind should I use?",
+             "My coffee tastes bitter", "Review my brews":
+            .cupboard
+        case "Where can I buy beans?", "Where can I buy this?":
+            .shopping
+        default:
+            nil
+        }
+    }
+
     /// The follow-ups a turn earned, then the standing menu behind them, so
     /// sliding right always reaches the rest of the app.
     static func following(_ cards: [ThreadCard]) -> [String] {
