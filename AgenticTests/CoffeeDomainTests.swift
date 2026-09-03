@@ -684,13 +684,29 @@ struct BeanMatcherTests {
 struct QuickReplyTests {
     private let bean = ThreadCard.bean(BeanCard(profile(id: "x")))
 
-    @Test("an offered question replaces whatever the cards would have suggested")
-    func choicesOutrankDerivedReplies() {
+    @Test("an offered question leads, ahead of anything the cards would have suggested")
+    func choicesLeadTheReplies() {
         let cards: [ThreadCard] = [
             bean,
             .choices(ChoiceCard(question: "How should it feel?", options: ["Bright", "Smooth"])),
         ]
-        #expect(QuickReplies.following(cards) == ["Bright", "Smooth"])
+        let replies = QuickReplies.following(cards)
+        #expect(replies.prefix(2) == ["Bright", "Smooth"])
+        // The standing menu sits behind the answer, never in front of it.
+        #expect(!replies.prefix(2).contains { QuickReplies.opening.contains($0) })
+    }
+
+    @Test("the standing menu is always reachable by sliding, whatever the turn produced")
+    func openingIsAlwaysAppended() {
+        for cards in [[bean], [], [.choices(ChoiceCard(question: "q", options: ["a"]))]] {
+            let replies = QuickReplies.following(cards)
+            #expect(QuickReplies.opening.allSatisfy(replies.contains))
+        }
+    }
+
+    @Test("nothing is offered twice, so sliding does not repeat what is already on screen")
+    func noDuplicateReplies() {
+        #expect(Set(QuickReplies.following([bean])).count == QuickReplies.following([bean]).count)
     }
 
     @Test("an unreviewed brew is offered before anything else about the bag")

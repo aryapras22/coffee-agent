@@ -44,6 +44,7 @@ struct ContentView: View {
     @State private var bagScan: BagScan?
     @State private var showingCamera = false
     @State private var pendingCapture: UIImage?
+    @State private var flashcardIndex = 0
     @FocusState private var isComposerFocused: Bool
 
     /// The one screen still worth covering the chat with: a list you delete
@@ -319,6 +320,7 @@ struct ContentView: View {
             }
             Button("Scan a bag", systemImage: "camera") { startScan() }
             Button("Add a bag by hand", systemImage: "square.and.pencil") { enterBagByHand() }
+            Button("Deal a flashcard", systemImage: "rectangle.on.rectangle") { dealFlashcard() }
             Button("My cupboard", systemImage: "archivebox") { open(.cupboard) }
         } label: {
             Image(systemName: "cup.and.saucer")
@@ -364,6 +366,20 @@ struct ContentView: View {
         Log.write(.ui, "opened the scan card in the thread")
         pendingBag = nil
         bagScan = BagScan()
+    }
+
+    /// Dealt by the app rather than by a tool. The deck is a fixed list and
+    /// the value is in covering the answer, neither of which needs a model,
+    /// and a tool schema for it cost 178 tokens of a 4096 token window.
+    private func dealFlashcard() {
+        guard let model else { return }
+        let card = Flashcards.all[flashcardIndex % Flashcards.all.count]
+        flashcardIndex += 1
+        Log.write(.ui, "dealt flashcard \(card.id)")
+        model.post(
+            "Card \((flashcardIndex - 1) % Flashcards.all.count + 1) of \(Flashcards.all.count).",
+            cards: [.flashcard(FlashcardCard(card))]
+        )
     }
 
     private func enterBagByHand() {
@@ -434,33 +450,36 @@ struct ContentView: View {
     /// Tappable answers to whatever the agent last said. When it asked a
     /// question through `offerChoices` these are its own options; otherwise
     /// they follow from the cards on screen.
-    @ViewBuilder
     private func replies(for model: ChatManager) -> some View {
-        let items = model.quickReplies
-        if !items.isEmpty {
-            ScrollView(.horizontal) {
-                HStack(spacing: Theme.sm) {
-                    ForEach(items, id: \.self) { reply in
-                        Button {
-                            send(reply, on: model)
-                        } label: {
-                            Text(reply)
-                                .font(Theme.control)
-                                .foregroundStyle(Theme.accent)
-                                .padding(.horizontal, Theme.md)
-                                .padding(.vertical, Theme.sm)
-                                .background(Theme.paper, in: .capsule)
-                                .overlay(Capsule().stroke(Theme.rule, lineWidth: Theme.hairline))
-                        }
-                        .buttonStyle(PressScale())
+        ScrollView(.horizontal) {
+            HStack(spacing: Theme.sm) {
+                ForEach(model.quickReplies, id: \.self) { reply in
+                    Button {
+                        send(reply, on: model)
+                    } label: {
+                        Text(reply)
+                            .font(Theme.control)
+                            .foregroundStyle(Theme.accent)
+                            .lineLimit(1)
+                            .padding(.horizontal, Theme.md)
+                            .padding(.vertical, Theme.sm)
+                            .background(Theme.paper, in: .capsule)
+                            .overlay(Capsule().stroke(Theme.rule, lineWidth: Theme.hairline))
                     }
+                    .buttonStyle(PressScale())
                 }
-                .padding(.horizontal, Theme.md)
-                .padding(.bottom, Theme.sm)
             }
-            .scrollIndicators(.hidden)
-            .frame(height: 48)
+            .padding(.horizontal, Theme.md)
+            .padding(.bottom, Theme.sm)
         }
+        .scrollIndicators(.hidden)
+        .frame(height: 48)
+        // Dimmed rather than removed while a turn runs: the bar is a standing
+        // menu, and having it disappear under your thumb is what made it feel
+        // like the app had taken the options away.
+        .opacity(model.isResponding ? 0.4 : 1)
+        .disabled(model.isResponding)
+        .animation(Theme.enter, value: model.isResponding)
     }
 
     /// A chip naming something the app does rather than something to ask about
@@ -472,6 +491,8 @@ struct ContentView: View {
             startScan()
         case "Start brewing":
             panel = .brewSetup
+        case "Teach me something", "Another card":
+            dealFlashcard()
         case "Review my brews":
             guard let session = cupboard?.awaitingReview.first else { break }
             cupboard?.beginReview(of: session)

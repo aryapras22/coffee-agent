@@ -172,14 +172,28 @@ actor CardLog {
 /// same three, and spending a model call on them would add latency to every
 /// turn for a fixed answer.
 nonisolated enum QuickReplies {
+    /// Always shown, never empty. The bar is a standing menu of what the app
+    /// can do, not a prompt that appears and vanishes, so there is always
+    /// somewhere to go from a blank thread or a failed turn.
     static let opening = [
         "Recommend a bean",
         "What do I have?",
         "Scan a bag",
         "Start brewing",
+        "My coffee tastes bitter",
+        "Compare my notes",
+        "Teach me something",
+        "Where can I buy beans?",
     ]
 
+    /// The follow-ups a turn earned, then the standing menu behind them, so
+    /// sliding right always reaches the rest of the app.
     static func following(_ cards: [ThreadCard]) -> [String] {
+        let led = lead(cards)
+        return led + opening.filter { !led.contains($0) }
+    }
+
+    private static func lead(_ cards: [ThreadCard]) -> [String] {
         // An explicit question outranks anything derived: the agent asked
         // something, and the reader's next move is to answer it.
         if let choices = cards.compactMap(\.choiceCard).last {
@@ -205,7 +219,7 @@ nonisolated enum QuickReplies {
                 break
             }
         }
-        return replies.isEmpty ? opening : replies
+        return replies
     }
 }
 
@@ -251,50 +265,5 @@ struct OfferChoicesTool: Tool {
         Log.write(.tool, "offerChoices \"\(arguments.question)\" -> \(options.joined(separator: " | "))")
         await log.append([.choices(ChoiceCard(question: arguments.question, options: options))])
         return Outcome(shown: options.count)
-    }
-}
-
-/// One card at a time, drawn from the deck the corpus defines. The value is in
-/// covering the answer before you look, which a plain chat reply gives away.
-struct FlashcardTool: Tool {
-    let name = "showFlashcard"
-    let description =
-        "Shows one flashcard on coffee processing methods or moka pot technique, face down. Use when the user wants to learn or be quizzed rather than be told."
-
-    let log: CardLog
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "What the card should be about: a processing method, or moka pot technique")
-        var topic: String
-
-        @Guide(description: "Ids of cards already shown this conversation, so the same one is not repeated")
-        var alreadyShown: [String]
-    }
-
-    @Generable
-    struct Outcome {
-        var cardId: String?
-        var front: String?
-        var remaining: Int
-    }
-
-    func call(arguments: Arguments) async throws -> Outcome {
-        let seen = Set(arguments.alreadyShown)
-        let terms = BeanMatcher.terms(in: arguments.topic)
-        let unseen = Flashcards.all.filter { !seen.contains($0.id) }
-
-        // Topic match first, then anything unseen, so asking for "processing"
-        // twice still moves through the deck instead of stalling.
-        let chosen = unseen.first { !terms.intersection(BeanMatcher.terms(in: $0.front + " " + $0.back)).isEmpty }
-            ?? unseen.first
-        guard let chosen else {
-            Log.write(.quiz, "showFlashcard deck exhausted after \(seen.count)")
-            return Outcome(cardId: nil, front: nil, remaining: 0)
-        }
-
-        Log.write(.quiz, "showFlashcard \(chosen.id), \(unseen.count - 1) left")
-        await log.append([.flashcard(FlashcardCard(chosen))])
-        return Outcome(cardId: chosen.id, front: chosen.front, remaining: unseen.count - 1)
     }
 }

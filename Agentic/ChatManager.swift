@@ -183,14 +183,14 @@ final class ChatManager {
         return display
     }
 
-    /// What to offer under the composer. Empty while a turn is in flight, and
-    /// after a user message that got no reply, so the chips never sit under a
-    /// question the agent has not answered.
+    /// What to offer under the composer. Never empty: the bar is a standing
+    /// menu of what the app can do, so a blank thread, a turn in flight and a
+    /// failed turn all still have somewhere to go.
     var quickReplies: [String] {
-        guard !isResponding, transientFailure == nil else { return [] }
         let sorted = chatSession.messages.sorted { $0.timestamp < $1.timestamp }
-        guard let last = sorted.last else { return QuickReplies.opening }
-        guard last.role == .assistant else { return [] }
+        guard let last = sorted.last, last.role == .assistant else {
+            return QuickReplies.opening
+        }
         return QuickReplies.following(last.cards)
     }
 
@@ -323,9 +323,9 @@ final class ChatManager {
             // the context, where a later, unrelated save would flush it.
             try? context.save()
             refreshSessions()
-            Log.write(.failure, "turn failed: \(error)")
+            Log.write(.failure, "turn failed: \(Self.describe(error)) | \(error)")
             failureID = UUID()
-            transientFailure = "\(error)"
+            transientFailure = Self.readable(error)
         }
     }
 
@@ -344,6 +344,52 @@ final class ChatManager {
                 guard let manager, manager.isResponding, manager.modelSession === session else { return }
                 manager.trackSteps(of: session)
             }
+        }
+    }
+
+    /// Names the failure instead of printing its code. `"\(error)"` on a
+    /// `GenerationError` gives `Code=-1` and an underlying error, which says
+    /// nothing about whether the window overflowed, the model was busy, or the
+    /// service went away. The case is the whole diagnosis.
+    static func describe(_ error: Error) -> String {
+        guard let generation = error as? LanguageModelSession.GenerationError else {
+            return "\(error)"
+        }
+        switch generation {
+        case .exceededContextWindowSize: return "exceededContextWindowSize"
+        case .assetsUnavailable: return "assetsUnavailable"
+        case .guardrailViolation: return "guardrailViolation"
+        case .unsupportedGuide: return "unsupportedGuide"
+        case .unsupportedLanguageOrLocale: return "unsupportedLanguageOrLocale"
+        case .decodingFailure: return "decodingFailure"
+        case .rateLimited: return "rateLimited"
+        case .concurrentRequests: return "concurrentRequests"
+        case .refusal: return "refusal"
+        @unknown default: return "unknown GenerationError: \(generation)"
+        }
+    }
+
+    /// What the failure bubble says. The case name is for the log; a reader
+    /// needs to know whether to retry, start a new chat, or wait.
+    static func readable(_ error: Error) -> String {
+        guard let generation = error as? LanguageModelSession.GenerationError else {
+            return "\(error)"
+        }
+        switch generation {
+        case .exceededContextWindowSize:
+            return "This conversation no longer fits in the agent's memory. Start a new chat to carry on."
+        case .assetsUnavailable:
+            return "The on-device model is not available right now."
+        case .rateLimited, .concurrentRequests:
+            return "The model is busy. Try that again in a moment."
+        case .guardrailViolation, .refusal:
+            return "The model declined to answer that one."
+        case .unsupportedLanguageOrLocale:
+            return "The model does not read that language."
+        case .decodingFailure, .unsupportedGuide:
+            return "The model's reply could not be read. Try rephrasing."
+        @unknown default:
+            return "That did not go through. Try again."
         }
     }
 
