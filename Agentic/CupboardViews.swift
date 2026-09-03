@@ -107,11 +107,15 @@ struct BeanDetailView: View {
         List {
             if let photo = BagPhotoStore.image(named: bean.bagPhotoFilename) {
                 Section {
+                    // Capped and inset rather than full bleed: a portrait bag
+                    // shot ran the full width of the screen, so the fields
+                    // this screen exists for started below the fold. Scaled to
+                    // fit, not fill, because a cropped label cannot be read.
                     Image(uiImage: photo)
                         .resizable()
                         .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 220)
                         .clipShape(.rect(cornerRadius: Theme.bubbleRadius))
-                        .listRowInsets(EdgeInsets())
                 }
                 .listRowBackground(Theme.paper)
             }
