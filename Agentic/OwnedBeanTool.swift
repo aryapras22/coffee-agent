@@ -114,12 +114,18 @@ struct OwnedBeanTool: Tool {
         }
         Log.write(.tool, "searchOwnedBeans matchesFound \(matched.count): \(matched.map(\.displayName).joined(separator: ", "))")
 
-        var cards: [ThreadCard] = []
-        for bean in matched {
-            let linked = await bean.corpusReferenceId.asyncFlatMap { await store.profile(id: $0) }
-            cards.append(.owned(OwnedCard(bean, corpusLink: linked?.name)))
+        // Resolved in one hop to the corpus actor rather than one per bag.
+        // Two bags can reference the same lot, so the names are merged rather
+        // than keyed uniquely, which would trap.
+        let linkedNames = Dictionary(
+            await store.profiles(for: matched.compactMap(\.corpusReferenceId)).map { ($0.id, $0.name) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let cards = matched.map { bean in
+            ThreadCard.owned(OwnedCard(bean, corpusLink: bean.corpusReferenceId.flatMap { linkedNames[$0] }))
         }
         await log.append(cards)
+        Log.write(.tool, "searchOwnedBeans returned \(cards.count) cards")
 
         return OwnedBeanOutcome(
             status: .matchesFound,
@@ -243,7 +249,10 @@ struct CompareTastingTool: Tool {
             return ComparisonOutcome(status: .beanNotOwned, beanName: name ?? "", corpusSays: nil, roasterSays: nil, youTasted: nil, caveat: nil)
         }
 
-        let profile = await bean.corpusReferenceId.asyncFlatMap { await store.profile(id: $0) }
+        var profile: BeanProfile?
+        if let id = bean.corpusReferenceId {
+            profile = await store.profile(id: id)
+        }
         let corpusSays = profile?.flavorNotes.map(\.label) ?? []
         let tasted = bean.tastedFlavors.map(\.label).sorted()
 
@@ -286,13 +295,4 @@ struct CompareTastingTool: Tool {
 
 extension String {
     fileprivate var nilIfEmpty: String? { isEmpty ? nil : self }
-}
-
-extension Optional {
-    /// `flatMap` cannot take an `async` transform, and both call sites here
-    /// need to reach an actor to resolve a corpus id.
-    fileprivate func asyncFlatMap<T>(_ transform: (Wrapped) async -> T?) async -> T? {
-        guard let self else { return nil }
-        return await transform(self)
-    }
 }
