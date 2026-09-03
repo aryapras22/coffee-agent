@@ -297,9 +297,9 @@ struct PinnedPanel<Content: View>: View {
                         onClose()
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(Theme.inkMuted)
-                            .frame(width: 28, height: 28)
+                            .frame(width: 44, height: 44)
                             .contentShape(.rect)
                     }
                     .accessibilityLabel("Close \(title)")

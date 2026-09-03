@@ -61,6 +61,9 @@ struct ContentView: View {
 
     /// A scanned or blank bag waiting to be checked.
     struct PendingBag {
+        /// Identity for the card, so a second bag gets its own field state
+        /// instead of inheriting the previous one's.
+        let id = UUID()
         var draft: BagScanner.Draft
         var ocrText: String?
         var photo: UIImage?
@@ -174,6 +177,7 @@ struct ContentView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     model.newChat()
+                    clearComposingSurfaces()
                     path.append(model.chatSession)
                 } label: {
                     Image(systemName: "square.and.pencil")
@@ -190,7 +194,23 @@ struct ContentView: View {
     /// a frame under the new room's title.
     private func open(_ session: ChatSession, on model: ChatManager) {
         model.select(session)
+        clearComposingSurfaces()
         path.append(session)
+    }
+
+    /// A half-filled bag form belongs to the conversation it was opened in.
+    /// Leaving it standing through a new chat makes it look like the fresh
+    /// thread already has something in it.
+    ///
+    /// A running brew deliberately survives: the timer is app-wide, and the
+    /// pot does not stop because you opened another chat.
+    private func clearComposingSurfaces() {
+        if pendingBag != nil || bagScan != nil || panel != nil {
+            Log.write(.ui, "cleared the bag and brew setup panels for a different chat")
+        }
+        pendingBag = nil
+        bagScan = nil
+        panel = nil
     }
 
     private func roomRow(for session: ChatSession, current: Bool) -> some View {
@@ -276,6 +296,7 @@ struct ContentView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     model.newChat()
+                    clearComposingSurfaces()
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
@@ -502,9 +523,10 @@ struct ContentView: View {
                             guard let saved else { return }
                             Task { await announce(saved, cupboard: cupboard) }
                         }
-                        // Identified by the draft it started from, so editing a
-                        // field does not rebuild the card and drop the keyboard.
-                        .id(Self.confirmID)
+                        // Identified by the bag it started from: stable while
+                        // editing so the keyboard is not dropped on every
+                        // keystroke, new when a different bag arrives.
+                        .id(pending.id)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
                     }
 
@@ -516,12 +538,26 @@ struct ContentView: View {
                         .id(Self.bottomID)
                 }
                 .padding(Theme.lg)
+                // On the container, not the scroll view: an ancestor tap
+                // gesture yields to any button, field or card that wants the
+                // touch, so this only fires on the gaps between them.
+                .contentShape(.rect)
+                .onTapGesture { dismissKeyboard() }
                 .animation(Theme.enter, value: model.displayMessages.count)
                 .animation(Theme.enter, value: model.liveSteps.count)
                 .animation(Theme.enter, value: pendingBag != nil)
                 .animation(Theme.enter, value: bagScan?.stage)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Behind the content, so a tap that a button, a field or a card
+            // already consumed never reaches it. `.interactively` only
+            // dismisses on a drag, which left no way to close the keyboard by
+            // tapping the conversation.
+            .background {
+                Color.clear
+                    .contentShape(.rect)
+                    .onTapGesture { dismissKeyboard() }
+            }
             .onChange(of: model.displayMessages.count) { scrollToLatest(proxy) }
             .onChange(of: model.isResponding) { scrollToLatest(proxy) }
             .onChange(of: model.liveSteps.count) { scrollToLatest(proxy) }
@@ -653,12 +689,21 @@ struct ContentView: View {
         .accessibilityValue(usage.formatted(.percent.precision(.fractionLength(0))))
     }
 
+    /// The composer, the confirm card and both brew panels each own their own
+    /// text field, so "close the keyboard" cannot be expressed as clearing one
+    /// `FocusState`. Resigning the first responder covers whichever is up.
+    private func dismissKeyboard() {
+        isComposerFocused = false
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+        )
+    }
+
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
         withAnimation(Theme.enter) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
     }
 
     private static let bottomID = "bottom"
-    private static let confirmID = "confirm-bag"
     private static let scanID = "scan-bag"
     private static let gaugeWidth: CGFloat = 44
 }

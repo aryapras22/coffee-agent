@@ -301,9 +301,15 @@ struct BagConfirmCard: View {
                     .font(Theme.display)
                     .foregroundStyle(Theme.ink)
                 Spacer(minLength: Theme.md)
+                // Padded to a real touch target. Caption text on its own is
+                // about fourteen points tall, so the button was there but
+                // almost impossible to actually hit.
                 Button("Cancel") { onFinish(nil) }
-                    .font(Theme.label)
+                    .font(Theme.control)
                     .foregroundStyle(Theme.inkMuted)
+                    .padding(.horizontal, Theme.sm)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
             }
 
             if let photo {
@@ -516,8 +522,11 @@ struct BagScanCard: View {
                 Text("Scan a bag").font(Theme.display).foregroundStyle(Theme.ink)
                 Spacer(minLength: Theme.md)
                 Button("Cancel") { onCancel() }
-                    .font(Theme.label)
+                    .font(Theme.control)
                     .foregroundStyle(Theme.inkMuted)
+                    .padding(.horizontal, Theme.sm)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
             }
 
             if let image {
