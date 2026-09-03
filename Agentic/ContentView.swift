@@ -1026,7 +1026,9 @@ private struct MapPreview: View {
 private struct StepTrace: View {
     let steps: [AgentStep]
 
-    @State private var isExpanded = true
+    /// Collapsed until asked for. The trace is there to be checked when an
+    /// answer looks wrong, not to sit under every reply competing with it.
+    @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.md) {
@@ -1034,15 +1036,21 @@ private struct StepTrace: View {
                 withAnimation(Theme.enter) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: Theme.xs) {
-                    Text("\(steps.count) steps")
+                    Text(steps.count == 1 ? "1 step" : "\(steps.count) steps")
                     Image(systemName: "chevron.down")
                         .font(.caption2)
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
                 }
                 .font(Theme.label)
                 .foregroundStyle(Theme.inkMuted)
+                // The summary is now the only thing normally on screen, so it
+                // has to be a real target rather than caption-sized text.
+                .padding(.vertical, Theme.sm)
+                .contentShape(.rect)
             }
             .buttonStyle(PressScale())
+            .accessibilityLabel(steps.count == 1 ? "1 step" : "\(steps.count) steps")
+            .accessibilityHint(isExpanded ? "Hides what the agent did" : "Shows what the agent did")
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: Theme.md) {
