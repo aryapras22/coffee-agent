@@ -79,3 +79,22 @@ struct NearbyPlacesToolIntegrationTests {
         #expect(logged.map(\.name) == outcome.places.map(\.name))
     }
 }
+
+struct NearbyPlacesTrimmingTests {
+    @Test("an address is cut to street and area, dropping what every result repeats")
+    func addressIsBriefed() {
+        #expect(NearbyPlacesTool.brief("Jl. Raya Darmo No.68, Wonokromo, Surabaya, East Java 60241, Indonesia")
+            == "Jl. Raya Darmo No.68, Wonokromo")
+    }
+
+    @Test("a short address survives intact")
+    func shortAddressIsUnchanged() {
+        #expect(NearbyPlacesTool.brief("Klinik Kopi") == "Klinik Kopi")
+        #expect(NearbyPlacesTool.brief("") == "")
+    }
+
+    @Test("the cap is below what MapKit will hand back, so it actually binds")
+    func capIsMeaningful() {
+        #expect(NearbyPlacesTool.maxReported <= 5)
+    }
+}

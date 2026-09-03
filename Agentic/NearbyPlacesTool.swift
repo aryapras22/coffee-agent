@@ -81,6 +81,18 @@ struct NearbyPlacesTool: Tool {
     let name = "findNearbyCafes"
     let description = "Finds cafes or coffee shops near the person's current location."
 
+    /// The only cap the model cannot raise, because it is not an argument.
+    /// Every other tool bounds its results with a `limit` guide; this one
+    /// returned however many MapKit felt like.
+    static let maxReported = 5
+
+    /// Street and area, without the province, postcode and country that every
+    /// result in one search repeats. The map handoff keeps the full address.
+    static func brief(_ address: String) -> String {
+        let parts = address.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        return parts.prefix(2).joined(separator: ", ")
+    }
+
     let locationProvider: CoordinateProviding
     let log: PlaceLog
     /// Defaulted so the tool stays constructible without the chat around it.
@@ -131,9 +143,16 @@ struct NearbyPlacesTool: Tool {
             )
         }.sorted { $0.distanceMeters < $1.distanceMeters }
 
+        // Every pin still goes on the map: coordinates are cheap and the map
+        // is the right place to see twenty of something.
         await log.append(found)
+
+        // The model and the thread get the nearest few. MapKit will happily
+        // return twenty five results, and a full address each is enough to
+        // overflow the context window on its own, which is what it did.
+        let reported = Array(found.prefix(Self.maxReported))
         await cards?.append(
-            found.map { place in
+            reported.map { place in
                 .seller(
                     SellerCard(
                         name: place.name,
@@ -145,12 +164,13 @@ struct NearbyPlacesTool: Tool {
             }
         )
 
-        let hits = found.map {
-            PlaceHit(name: $0.name, address: $0.address, distanceMeters: $0.distanceMeters)
+        let hits = reported.map {
+            PlaceHit(name: $0.name, address: Self.brief($0.address), distanceMeters: $0.distanceMeters)
         }
+        Log.write(.tool, "findNearbyCafes \(found.count) found, \(hits.count) reported")
 
         return PlaceSearchOutcome(
-            status: hits.isEmpty ? .noMatchesNearby : .matchesFound,
+            status: found.isEmpty ? .noMatchesNearby : .matchesFound,
             places: hits,
             reason: nil
         )

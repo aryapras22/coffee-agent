@@ -301,7 +301,7 @@ final class ChatManager {
         chatSession.messages.append(userMessage)
 
         do {
-            let response = try await modelSession.respond(to: question)
+            let response = try await respondRecoveringFromOverflow(to: question)
 
             let assistantMessage = ChatMessage(role: .assistant, content: response.content)
             assistantMessage.session = chatSession
@@ -327,6 +327,37 @@ final class ChatManager {
             failureID = UUID()
             transientFailure = Self.readable(error)
         }
+    }
+
+    /// One retry, and only for a window that overflowed mid-turn. No cap on a
+    /// tool's output can be perfectly right, so the turn that trips it has to
+    /// be able to recover rather than costing the user their question.
+    ///
+    /// The retry is not free: compaction replaces earlier turns with a
+    /// summary. That is the trade, and it beats a failed answer.
+    private func respondRecoveringFromOverflow(
+        to question: String
+    ) async throws -> LanguageModelSession.Response<String> {
+        do {
+            return try await modelSession.respond(to: question)
+        } catch let error where Self.isOverflow(error) {
+            Log.write(.agent, "context overflowed mid-turn, compacting and asking once more")
+            await compact()
+
+            // The failed attempt may have logged cards and cafes of its own,
+            // and they belong to a reply that never arrived.
+            await agent.placeLog.reset()
+            await agent.cardLog.reset()
+            trackSteps(of: modelSession)
+
+            return try await modelSession.respond(to: question)
+        }
+    }
+
+    static func isOverflow(_ error: Error) -> Bool {
+        guard let generation = error as? LanguageModelSession.GenerationError else { return false }
+        if case .exceededContextWindowSize = generation { return true }
+        return false
     }
 
     /// The session appends to its transcript as the run progresses, so
@@ -411,7 +442,10 @@ final class ChatManager {
             let used = await refreshContextUsage(),
             Self.shouldCompact(usedTokens: used, budget: SystemLanguageModel.default.contextSize)
         else { return }
+        await compact()
+    }
 
+    private func compact() async {
         guard !chatSession.messages.isEmpty else {
             // Nothing said yet, so the window is all instructions and tool
             // schemas. Summarising an empty conversation would free nothing.
