@@ -51,7 +51,7 @@ struct ContentView: View {
     /// rows from. Everything else the agent used to hand off to a sheet now
     /// happens in the conversation.
     enum Workbench: String, Identifiable {
-        case cupboard, memory
+        case cupboard, memory, logs
 
         var id: String { rawValue }
     }
@@ -117,15 +117,17 @@ struct ContentView: View {
             await model?.prepareIndex()
         }
         .sheet(item: $sheet) { destination in
-            if let cupboard {
-                switch destination {
-                case .cupboard:
+            switch destination {
+            case .cupboard:
+                if let cupboard {
                     CupboardView(manager: cupboard)
-                case .memory:
-                    if let model {
-                        MemoryView(model: model)
-                    }
                 }
+            case .memory:
+                if let model {
+                    MemoryView(model: model)
+                }
+            case .logs:
+                LogView()
             }
         }
     }
@@ -322,6 +324,7 @@ struct ContentView: View {
             Button("Add a bag by hand", systemImage: "square.and.pencil") { enterBagByHand() }
             Button("Deal a flashcard", systemImage: "rectangle.on.rectangle") { dealFlashcard() }
             Button("My cupboard", systemImage: "archivebox") { open(.cupboard) }
+            Button("Log", systemImage: "text.alignleft") { open(.logs) }
         } label: {
             Image(systemName: "cup.and.saucer")
         }
@@ -961,6 +964,103 @@ private struct MemoryView: View {
 /// Every cafe the turn found, on one map. Non-interactive on purpose: a
 /// pannable map inside a scrolling transcript fights the scroll, and the
 /// gesture the reader wants here is "show me this properly", which is Maps.
+/// The log page: the lines `Log.write` produced, on the device that produced
+/// them. Newest first rather than tailing the bottom, because after something
+/// goes wrong the interesting lines are the last few, and a list that
+/// auto-scrolls fights anyone who scrolled up to read.
+private struct LogView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var entries: [LogEntry] = []
+    @State private var kind: Log.Kind?
+
+    private static let everything = "All"
+    private static let filters = [everything] + Log.Kind.allCases.map(\.rawValue)
+
+    private var shown: [LogEntry] {
+        let matching = kind.map { wanted in entries.filter { $0.kind == wanted } } ?? entries
+        return matching.reversed()
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ChipRow(items: Self.filters, selected: kind?.rawValue ?? Self.everything) { name in
+                    kind = name == Self.everything ? nil : Log.Kind(rawValue: name)
+                }
+                .padding(.horizontal, Theme.md)
+                .padding(.vertical, Theme.sm)
+
+                Divider().overlay(Theme.rule)
+                lines
+            }
+            .background(Theme.paper)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.paper, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Log").font(Theme.display).foregroundStyle(Theme.ink)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") { dismiss() }.tint(Theme.accent)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Clear") {
+                        LogStore.shared.clear()
+                        entries = []
+                    }
+                    .tint(Theme.accent)
+                    .disabled(entries.isEmpty)
+                }
+            }
+        }
+        // Polled rather than observed. `Log.write` runs on whatever thread a
+        // tool is on, and publishing every line to the main actor would put
+        // the logging onto the path it is there to measure.
+        .task {
+            while !Task.isCancelled {
+                entries = LogStore.shared.snapshot()
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var lines: some View {
+        if shown.isEmpty {
+            Text(entries.isEmpty ? "Nothing logged yet." : "Nothing logged under \(kind?.rawValue ?? "").")
+                .font(Theme.control)
+                .foregroundStyle(Theme.inkMuted)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.paper)
+        } else {
+            List(shown) { entry in
+                VStack(alignment: .leading, spacing: Theme.xs) {
+                    HStack(spacing: Theme.sm) {
+                        Text(entry.kind.rawValue)
+                            .font(Theme.trace)
+                            .foregroundStyle(entry.kind == .failure ? Theme.danger : Theme.accent)
+                        Text(entry.date, format: .dateTime.hour().minute().second())
+                            .font(Theme.trace)
+                            .foregroundStyle(Theme.inkMuted)
+                    }
+
+                    // Selectable so one line can be copied off the device
+                    // without a share sheet or a cable.
+                    Text(entry.message)
+                        .font(Theme.trace)
+                        .foregroundStyle(Theme.ink)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 2)
+                .listRowBackground(Theme.paper)
+                .listRowSeparatorTint(Theme.rule)
+            }
+            .listStyle(.plain)
+        }
+    }
+}
+
 private struct MapPreview: View {
     let places: [MappedPlace]
 

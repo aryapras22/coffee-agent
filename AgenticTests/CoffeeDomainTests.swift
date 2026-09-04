@@ -796,3 +796,37 @@ struct SpecialtyRoutingTests {
 enum ContentViewIntents {
     static let handledInApp: Set<String> = ["Scan a bag", "Start brewing", "Teach me something", "Another card", "Review my brews"]
 }
+
+struct LogPersistenceTests {
+    private func entry(_ message: String) -> LogEntry {
+        LogEntry(id: UUID(), date: Date(timeIntervalSince1970: 1_788_489_337.25), kind: .tool, message: message)
+    }
+
+    @Test("a line survives the round trip to the file and back")
+    func roundTrip() throws {
+        let written = LogStore.line(entry("searchBeanCorpus query=\"gayo\" limit=3"))
+        let read = try #require(LogStore.parse(Substring(written)))
+        #expect(read.kind == .tool)
+        #expect(read.message == "searchBeanCorpus query=\"gayo\" limit=3")
+        #expect(read.date.timeIntervalSince1970 == 1_788_489_337.25)
+    }
+
+    @Test("a tab inside the message stays in the message rather than shifting the columns")
+    func tabsInTheMessageSurvive() throws {
+        let read = try #require(LogStore.parse(Substring(LogStore.line(entry("a\tb\tc")))))
+        #expect(read.message == "a\tb\tc")
+    }
+
+    @Test("a newline is flattened, because one entry has to stay one line")
+    func newlinesAreFlattened() throws {
+        let written = LogStore.line(entry("first\nsecond"))
+        #expect(!written.contains("\n"))
+        #expect(try #require(LogStore.parse(Substring(written))).message == "first second")
+    }
+
+    @Test("a truncated or unparsable line is dropped rather than trapping")
+    func brokenLinesAreSkipped() {
+        #expect(LogStore.parse("nonsense") == nil)
+        #expect(LogStore.parse("1788489337.25\tNOTAKIND\tmessage") == nil)
+    }
+}
