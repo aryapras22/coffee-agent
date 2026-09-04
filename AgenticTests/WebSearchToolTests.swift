@@ -116,3 +116,78 @@ struct WebSearchToolTests {
         #expect(outcome.results.isEmpty)
     }
 }
+
+struct WebSearchLocationTests {
+    private let bandung = CoarsePlace(locality: "Bandung", country: "Indonesia")
+
+    @Test("a known place is appended so the search is biased towards it")
+    func placeIsAppended() {
+        #expect(WebSearchTool.localised("where to buy gayo coffee", near: bandung)
+            == "where to buy gayo coffee in Bandung, Indonesia")
+    }
+
+    @Test("no location leaves the query exactly as the model wrote it")
+    func noPlaceLeavesTheQueryAlone() {
+        #expect(WebSearchTool.localised("where to buy gayo coffee", near: nil)
+            == "where to buy gayo coffee")
+    }
+
+    @Test("a query that already names the place is not given it twice")
+    func alreadyNamedPlaceIsNotRepeated() {
+        #expect(WebSearchTool.localised("coffee roasters in Bandung", near: bandung)
+            == "coffee roasters in Bandung")
+        #expect(WebSearchTool.localised("indonesia coffee exporters", near: bandung)
+            == "indonesia coffee exporters")
+    }
+
+    @Test("a place with only a country still narrows the search")
+    func partialPlaceStillHelps() {
+        let country = CoarsePlace(locality: nil, country: "Indonesia")
+        #expect(WebSearchTool.localised("moka pot", near: country) == "moka pot in Indonesia")
+    }
+
+    @Test("a place with nothing in it is the same as no place")
+    func emptyPlaceChangesNothing() {
+        let nowhere = CoarsePlace(locality: nil, country: nil)
+        #expect(WebSearchTool.localised("moka pot", near: nowhere) == "moka pot")
+    }
+}
+
+struct WebSearchTrimmingTests {
+    @Test("a short snippet is passed through untouched")
+    func shortSnippetIsUnchanged() {
+        #expect(WebSearchTool.condensed("Sells Gayo beans.") == "Sells Gayo beans.")
+    }
+
+    @Test("a long snippet is cut to the limit on a word boundary")
+    func longSnippetIsCutCleanly() {
+        let long = String(repeating: "arabica beans ", count: 40)
+        let result = WebSearchTool.condensed(long)
+        #expect(result.count <= WebSearchTool.snippetLimit + 1)
+        #expect(result.hasSuffix("…"))
+
+        // The kept text is a genuine prefix of the input, and the character
+        // it stopped before is a space, so no word was split in half.
+        let body = String(result.dropLast())
+        #expect(long.hasPrefix(body))
+        #expect(!body.hasSuffix(" "))
+        #expect(long[long.index(long.startIndex, offsetBy: body.count)] == " ")
+    }
+
+    @Test("a single unbroken run still gets cut rather than passed through")
+    func unbrokenRunIsStillCut() {
+        let result = WebSearchTool.condensed(String(repeating: "x", count: 400))
+        #expect(result.count == WebSearchTool.snippetLimit + 1)
+    }
+
+    @Test("the host is what the model sees, without the www")
+    func hostIsExtracted() {
+        #expect(WebSearchTool.host(of: "https://www.ottencoffee.co.id/beans/gayo") == "ottencoffee.co.id")
+        #expect(WebSearchTool.host(of: "https://tokopedia.com/x") == "tokopedia.com")
+    }
+
+    @Test("something that is not a URL is reported as it stands rather than dropped")
+    func unparsableUrlSurvives() {
+        #expect(WebSearchTool.host(of: "not a url") == "not a url")
+    }
+}

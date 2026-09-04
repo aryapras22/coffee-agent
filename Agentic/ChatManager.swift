@@ -10,6 +10,36 @@ import FoundationModels
 import Observation
 import SwiftData
 
+/// What the model is actually carrying, for the memory gauge to expand into.
+/// The percentage on its own says how full the context is but not with what,
+/// and the answer matters: a window filled with tool results behaves very
+/// differently from one filled with conversation.
+nonisolated struct ContextReport: Sendable {
+    nonisolated struct Section: Identifiable, Sendable {
+        let id: String
+        let tokens: Int
+        let entries: Int
+    }
+
+    let usedTokens: Int
+    let budget: Int
+    /// What a brand new session costs before a word is said: the persona plus
+    /// every tool's argument schema. It never goes away, so the real room for
+    /// conversation is the budget minus this.
+    let fixedOverhead: Int
+    /// Measured per group, so these do not sum to `usedTokens`: each count
+    /// carries a little of the transcript's own framing. Shown as shares
+    /// rather than as an addition for that reason.
+    let sections: [Section]
+    /// The compaction summary standing in for turns no longer held verbatim.
+    let summary: String?
+    let recentMessagesReplayed: Int
+
+    var usage: Double { budget > 0 ? Double(usedTokens) / Double(budget) : 0 }
+
+    var roomForConversation: Int { max(budget - fixedOverhead, 0) }
+}
+
 /// Owns everything a chat needs: the active Chat Session, the persistence
 /// context, and the rebuildable Model Session that answers prompts. Replaces
 /// `ChatViewModel`. Kept on `@MainActor` alongside its `ModelContext` so the
@@ -37,6 +67,12 @@ final class ChatManager {
     /// and break `ForEach` identity and scroll-to-bottom.
     @ObservationIgnored private var failureID: UUID?
 
+    /// Which specialist is answering. Held across turns rather than resolved
+    /// per turn: most conversations stay in one corner of the app, and
+    /// rebuilding the session on every message would leave the model reading a
+    /// recap instead of the exchange it just had.
+    private(set) var specialty = Specialty.general
+
     private let context: ModelContext
     private let agent: CoffeeAgent
     @ObservationIgnored private var modelSession: LanguageModelSession
@@ -53,6 +89,7 @@ final class ChatManager {
         let session = Self.mostRecentOrNewSession(in: context)
         self.chatSession = session
         self.modelSession = agent.makeSession(recap: Self.recap(for: session, maxRawMessages: Self.maxRawMessages))
+
         refreshSessions()
         Task { await refreshContextUsage() }
     }
@@ -60,8 +97,18 @@ final class ChatManager {
     /// Every replacement of the model session changes what the context holds,
     /// so the two always move together.
     private func rebuildSession(recap: String?) {
-        modelSession = agent.makeSession(recap: recap)
+        modelSession = agent.makeSession(for: specialty, recap: recap)
         Task { await refreshContextUsage() }
+    }
+
+    /// Switching costs a session rebuild, so it only happens on an actual
+    /// change. The recap carries the conversation across, the same way it does
+    /// after compaction.
+    private func switchSpecialty(to next: Specialty) {
+        guard next != specialty else { return }
+        Log.write(.agent, "specialty \(specialty.rawValue) -> \(next.rawValue)")
+        specialty = next
+        rebuildSession(recap: Self.recap(for: chatSession, maxRawMessages: Self.maxRawMessages))
     }
 
     /// Hands back the raw count as well, so a caller that also has to decide
@@ -143,7 +190,8 @@ final class ChatManager {
                     role: message.role == .user ? .user : .agent,
                     text: message.content,
                     steps: message.steps,
-                    places: message.places
+                    places: message.places,
+                    cards: message.cards
                 )
             }
         if let transientFailure, let failureID {
@@ -152,16 +200,96 @@ final class ChatManager {
         return display
     }
 
+    /// What to offer under the composer. Never empty: the bar is a standing
+    /// menu of what the app can do, so a blank thread, a turn in flight and a
+    /// failed turn all still have somewhere to go.
+    var quickReplies: [String] {
+        let sorted = chatSession.messages.sorted { $0.timestamp < $1.timestamp }
+        guard let last = sorted.last, last.role == .assistant else {
+            return QuickReplies.opening
+        }
+        return QuickReplies.following(last.cards)
+    }
+
+    /// A reply the app wrote rather than the model: a bag was saved, a brew
+    /// was logged, a verdict was taken. The facts in it are computed, not
+    /// generated, so nothing here can be a hallucination.
+    ///
+    /// It does not enter the live model transcript. That is deliberate and it
+    /// costs nothing: the cupboard, not the conversation, is what the tools
+    /// read, and the next session rebuild folds this into the recap anyway.
+    func post(_ text: String, cards: [ThreadCard] = []) {
+        let message = ChatMessage(role: .assistant, content: text)
+        message.session = chatSession
+        context.insert(message)
+        chatSession.messages.append(message)
+        message.cards = cards
+        try? context.save()
+        refreshSessions()
+        Log.write(.agent, "posted an app-authored reply, \(cards.count) cards")
+    }
+
+    /// One count for the whole transcript, which is exact, plus one per kind
+    /// of entry, which is not. Five extra token counts at most, and only when
+    /// someone opens the gauge.
+    func contextReport() async -> ContextReport? {
+        let model = SystemLanguageModel.default
+        guard let used = try? await model.tokenCount(for: modelSession.transcript) else {
+            Log.write(.failure, "context report unavailable, token count failed")
+            return nil
+        }
+
+        var grouped: [String: [Transcript.Entry]] = [:]
+        for entry in modelSession.transcript {
+            grouped[Self.label(for: entry), default: []].append(entry)
+        }
+
+        var sections: [ContextReport.Section] = []
+        for (label, entries) in grouped {
+            let tokens = (try? await model.tokenCount(for: Transcript(entries: entries))) ?? 0
+            sections.append(ContextReport.Section(id: label, tokens: tokens, entries: entries.count))
+        }
+
+        // Measured rather than assumed: the tool schemas dominate it, and they
+        // change whenever a tool is added.
+        let overhead = (try? await model.tokenCount(for: agent.makeSession().transcript)) ?? 0
+
+        Log.write(.agent, "context report \(used)/\(model.contextSize), \(overhead) fixed, \(sections.count) kinds")
+        return ContextReport(
+            usedTokens: used,
+            budget: model.contextSize,
+            fixedOverhead: overhead,
+            sections: sections.sorted { $0.tokens > $1.tokens },
+            summary: chatSession.summary,
+            recentMessagesReplayed: min(chatSession.messages.count, Self.maxRawMessages)
+        )
+    }
+
+    private static func label(for entry: Transcript.Entry) -> String {
+        switch entry {
+        case .instructions: "Instructions"
+        case .prompt: "Your messages"
+        case .response: "Replies"
+        case .toolCalls: "Tool calls"
+        case .toolOutput: "Tool results"
+        @unknown default: "Other"
+        }
+    }
+
     func prepareIndex() async {
         do {
             try await agent.indexBeans()
         } catch {
+            Log.write(.failure, "bean indexing failed: \(error)")
             failureID = UUID()
             transientFailure = "Could not index beans: \(error)"
         }
     }
 
-    func send(_ text: String? = nil) async {
+    /// `routedTo` is passed when the app already knows: every reply chip and
+    /// menu item is a string this app wrote, so classifying it would be paying
+    /// a model call to rediscover something that was never in doubt.
+    func send(_ text: String? = nil, routedTo known: Specialty? = nil) async {
         let question = (text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isResponding else { return }
 
@@ -170,12 +298,32 @@ final class ChatManager {
         failureID = nil
         isResponding = true
         liveSteps = []
+
+        // `??` cannot span an await, and routing must not run when the app
+        // already knows the answer.
+        let destination: Specialty
+        if let known {
+            destination = known
+        } else {
+            destination = await agent.route(question)
+        }
+        switchSpecialty(to: destination)
+
+        // Before the turn, not only after it. Compacting on the way out left
+        // the next turn free to start at the threshold with a quarter of the
+        // window for its prompt, every tool call, every tool result and the
+        // reply, which on a nine tool session is not enough.
+        await compactIfNeeded()
+
         trackSteps(of: modelSession)
         await agent.placeLog.reset()
+        await agent.cardLog.reset()
         defer {
             isResponding = false
             liveSteps = []
         }
+
+        Log.write(.agent, "send \"\(question)\" context=\(contextUsage.formatted(.percent.precision(.fractionLength(0))))")
 
         let userMessage = ChatMessage(role: .user, content: question)
         userMessage.session = chatSession
@@ -183,7 +331,7 @@ final class ChatManager {
         chatSession.messages.append(userMessage)
 
         do {
-            let response = try await modelSession.respond(to: question)
+            let response = try await respondRecoveringFromOverflow(to: question)
 
             let assistantMessage = ChatMessage(role: .assistant, content: response.content)
             assistantMessage.session = chatSession
@@ -191,10 +339,12 @@ final class ChatManager {
             chatSession.messages.append(assistantMessage)
             assistantMessage.steps = agent.steps(from: response.transcriptEntries)
             assistantMessage.places = await agent.placeLog.places
+            assistantMessage.cards = await agent.cardLog.cards
+            Log.write(.agent, "replied in \(assistantMessage.steps.count) steps, \(assistantMessage.places.count) places, \(assistantMessage.cards.count) cards")
 
             try context.save()
             refreshSessions()
-            await summarizeIfNeeded()
+            await compactIfNeeded()
         } catch {
             // The user's question was still asked, so it stays persisted even
             // though the model failed to answer it — only the failure itself
@@ -203,9 +353,41 @@ final class ChatManager {
             // the context, where a later, unrelated save would flush it.
             try? context.save()
             refreshSessions()
+            Log.write(.failure, "turn failed: \(Self.describe(error)) | \(error)")
             failureID = UUID()
-            transientFailure = "\(error)"
+            transientFailure = Self.readable(error)
         }
+    }
+
+    /// One retry, and only for a window that overflowed mid-turn. No cap on a
+    /// tool's output can be perfectly right, so the turn that trips it has to
+    /// be able to recover rather than costing the user their question.
+    ///
+    /// The retry is not free: compaction replaces earlier turns with a
+    /// summary. That is the trade, and it beats a failed answer.
+    private func respondRecoveringFromOverflow(
+        to question: String
+    ) async throws -> LanguageModelSession.Response<String> {
+        do {
+            return try await modelSession.respond(to: question)
+        } catch let error where Self.isOverflow(error) {
+            Log.write(.agent, "context overflowed mid-turn, compacting and asking once more")
+            await compact()
+
+            // The failed attempt may have logged cards and cafes of its own,
+            // and they belong to a reply that never arrived.
+            await agent.placeLog.reset()
+            await agent.cardLog.reset()
+            trackSteps(of: modelSession)
+
+            return try await modelSession.respond(to: question)
+        }
+    }
+
+    static func isOverflow(_ error: Error) -> Bool {
+        guard let generation = error as? LanguageModelSession.GenerationError else { return false }
+        if case .exceededContextWindowSize = generation { return true }
+        return false
     }
 
     /// The session appends to its transcript as the run progresses, so
@@ -226,20 +408,80 @@ final class ChatManager {
         }
     }
 
+    /// Names the failure instead of printing its code. `"\(error)"` on a
+    /// `GenerationError` gives `Code=-1` and an underlying error, which says
+    /// nothing about whether the window overflowed, the model was busy, or the
+    /// service went away. The case is the whole diagnosis.
+    static func describe(_ error: Error) -> String {
+        guard let generation = error as? LanguageModelSession.GenerationError else {
+            return "\(error)"
+        }
+        switch generation {
+        case .exceededContextWindowSize: return "exceededContextWindowSize"
+        case .assetsUnavailable: return "assetsUnavailable"
+        case .guardrailViolation: return "guardrailViolation"
+        case .unsupportedGuide: return "unsupportedGuide"
+        case .unsupportedLanguageOrLocale: return "unsupportedLanguageOrLocale"
+        case .decodingFailure: return "decodingFailure"
+        case .rateLimited: return "rateLimited"
+        case .concurrentRequests: return "concurrentRequests"
+        case .refusal: return "refusal"
+        @unknown default: return "unknown GenerationError: \(generation)"
+        }
+    }
+
+    /// What the failure bubble says. The case name is for the log; a reader
+    /// needs to know whether to retry, start a new chat, or wait.
+    static func readable(_ error: Error) -> String {
+        guard let generation = error as? LanguageModelSession.GenerationError else {
+            return "\(error)"
+        }
+        switch generation {
+        case .exceededContextWindowSize:
+            return "This conversation no longer fits in the agent's memory. Start a new chat to carry on."
+        case .assetsUnavailable:
+            return "The on-device model is not available right now."
+        case .rateLimited, .concurrentRequests:
+            return "The model is busy. Try that again in a moment."
+        case .guardrailViolation, .refusal:
+            return "The model declined to answer that one."
+        case .unsupportedLanguageOrLocale:
+            return "The model does not read that language."
+        case .decodingFailure, .unsupportedGuide:
+            return "The model's reply could not be read. Try rephrasing."
+        @unknown default:
+            return "That did not go through. Try again."
+        }
+    }
+
     /// A pure predicate pulled out of `summarizeIfNeeded()` so the threshold
     /// itself is testable without a real token count or model call.
     static func shouldCompact(usedTokens: Int, budget: Int) -> Bool {
         Double(usedTokens) >= Double(budget) * compactionThreshold
     }
 
-    /// Both turns are already saved by the time this runs, so a throw here
-    /// leaves the exchange durably stored with a stale-or-absent summary; the
-    /// next turn re-evaluates the threshold and retries.
-    private func summarizeIfNeeded() async {
+    /// Safe to call at either end of a turn. Running it before means a turn
+    /// starts with room; running it after means the reply that just arrived is
+    /// folded in rather than waiting for the next send.
+    ///
+    /// A throw here leaves the exchange durably stored with a stale or absent
+    /// summary, because both turns are saved before the post-turn call runs.
+    /// The next attempt re-evaluates the threshold and retries.
+    private func compactIfNeeded() async {
         guard
             let used = await refreshContextUsage(),
             Self.shouldCompact(usedTokens: used, budget: SystemLanguageModel.default.contextSize)
         else { return }
+        await compact()
+    }
+
+    private func compact() async {
+        guard !chatSession.messages.isEmpty else {
+            // Nothing said yet, so the window is all instructions and tool
+            // schemas. Summarising an empty conversation would free nothing.
+            Log.write(.agent, "over the threshold on instructions alone, nothing to compact")
+            return
+        }
 
         let sorted = chatSession.messages.sorted { $0.timestamp < $1.timestamp }
         let transcriptText = sorted.map { "\($0.role.rawValue): \($0.content)" }.joined(separator: "\n")
@@ -248,7 +490,11 @@ final class ChatManager {
             instructions: "Summarize this conversation in under 80 words. Keep names, decisions, and open questions."
         )
 
-        guard let summary = try? await summarizer.respond(to: transcriptText).content else { return }
+        guard let summary = try? await summarizer.respond(to: transcriptText).content else {
+            Log.write(.failure, "compaction summariser failed, retrying next turn")
+            return
+        }
+        Log.write(.agent, "compacted \(sorted.count) messages into a \(summary.count) character summary")
 
         chatSession.summary = summary
         rebuildSession(recap: Self.recap(for: chatSession, maxRawMessages: Self.maxRawMessages))

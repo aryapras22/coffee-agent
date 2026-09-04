@@ -26,20 +26,58 @@ struct DisplayMessage: Identifiable {
     let text: String
     var steps: [AgentStep] = []
     var places: [MappedPlace] = []
+    var cards: [ThreadCard] = []
 }
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: ChatManager?
+    @State private var cupboard: CupboardManager?
     @State private var path: [ChatSession] = []
+    @State private var sheet: Workbench?
+    /// A panel the user opened, as opposed to one the cupboard is already
+    /// running. Resolved after the live brew and the open review, so starting
+    /// a brew replaces the setup panel with the timer rather than stacking.
+    @State private var panel: Panel?
+    @State private var pendingBag: PendingBag?
+    @State private var bagScan: BagScan?
+    @State private var showingCamera = false
+    @State private var pendingCapture: UIImage?
+    @State private var flashcardIndex = 0
     @FocusState private var isComposerFocused: Bool
 
-    private static let starters = [
-        "Which of my beans are fruity?",
-        "Anything from Ethiopia?",
-        "I want a dark roast",
-    ]
+    /// The one screen still worth covering the chat with: a list you delete
+    /// rows from. Everything else the agent used to hand off to a sheet now
+    /// happens in the conversation.
+    enum Workbench: String, Identifiable {
+        case cupboard, memory, logs
+
+        var id: String { rawValue }
+    }
+
+    enum Panel {
+        case brewSetup
+    }
+
+    /// A scanned or blank bag waiting to be checked.
+    struct PendingBag {
+        /// Identity for the card, so a second bag gets its own field state
+        /// instead of inheriting the previous one's.
+        let id = UUID()
+        var draft: BagScanner.Draft
+        var ocrText: String?
+        var photo: UIImage?
+    }
+
+    /// A scan in progress. Held here rather than on the card because the
+    /// camera cover is attached to the chat, and a card in a lazy stack can be
+    /// torn down under it.
+    struct BagScan {
+        var stage: BagScanCard.Stage = .capture
+        var image: UIImage?
+        var failure: String?
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -68,11 +106,54 @@ struct ContentView: View {
             }
         }
         .task {
-            if model == nil {
-                model = try? ChatManager(context: modelContext, agent: CoffeeAgent())
+            if model == nil, let agent = try? CoffeeAgent() {
+                model = ChatManager(context: modelContext, agent: agent)
+                cupboard = CupboardManager(
+                    context: modelContext,
+                    cupboard: agent.cupboard,
+                    profiles: agent.store
+                )
             }
             await model?.prepareIndex()
         }
+        .sheet(item: $sheet) { destination in
+            switch destination {
+            case .cupboard:
+                if let cupboard {
+                    CupboardView(manager: cupboard)
+                }
+            case .memory:
+                if let model {
+                    MemoryView(model: model)
+                }
+            case .logs:
+                LogView()
+            }
+        }
+    }
+
+    /// The app speaking, not the model. Everything here is read back off the
+    /// bag that was just written, so the one thing a scan most often gets
+    /// wrong, a silent mismatch against the corpus, is stated rather than
+    /// assumed.
+    private func announce(_ bean: OwnedBean, cupboard: CupboardManager) async {
+        guard let model else { return }
+        let link = await cupboard.corpusName(for: bean)
+
+        var sentences = ["Saved \(bean.displayName)."]
+        sentences.append(link.map { "Linked to \($0) in the corpus." }
+            ?? "Nothing in the corpus matched it, so there is no reference profile to compare against.")
+        if !bean.grindSize.isAdjustable {
+            sentences.append("It is pre-ground \(bean.grindSize.label.lowercased()), so the dial-in will work on heat and timing rather than grind.")
+        }
+        if bean.roastDate == nil {
+            sentences.append("No roast date, so freshness will stay unknown until you add one.")
+        }
+
+        model.post(
+            sentences.joined(separator: " "),
+            cards: [.owned(OwnedCard(OwnedBeanSnapshot(bean), corpusLink: link))]
+        )
     }
 
     /// The saved sessions, as rooms to open. Reads `ChatManager`'s existing
@@ -103,6 +184,7 @@ struct ContentView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     model.newChat()
+                    clearComposingSurfaces()
                     path.append(model.chatSession)
                 } label: {
                     Image(systemName: "square.and.pencil")
@@ -119,7 +201,23 @@ struct ContentView: View {
     /// a frame under the new room's title.
     private func open(_ session: ChatSession, on model: ChatManager) {
         model.select(session)
+        clearComposingSurfaces()
         path.append(session)
+    }
+
+    /// A half-filled bag form belongs to the conversation it was opened in.
+    /// Leaving it standing through a new chat makes it look like the fresh
+    /// thread already has something in it.
+    ///
+    /// A running brew deliberately survives: the timer is app-wide, and the
+    /// pot does not stop because you opened another chat.
+    private func clearComposingSurfaces() {
+        if pendingBag != nil || bagScan != nil || panel != nil {
+            Log.write(.ui, "cleared the bag and brew setup panels for a different chat")
+        }
+        pendingBag = nil
+        bagScan = nil
+        panel = nil
     }
 
     private func roomRow(for session: ChatSession, current: Bool) -> some View {
@@ -166,7 +264,27 @@ struct ContentView: View {
     private func chat(for model: ChatManager) -> some View {
         VStack(spacing: 0) {
             transcript(for: model)
+            if let cupboard {
+                pinned(for: model, cupboard: cupboard)
+            }
+            replies(for: model)
             composer(for: model)
+        }
+        // Attached here, not to the card: the cover has to outlive whatever
+        // presented it, and reading waits for the camera to finish dismissing
+        // so the confirm card is not racing a cover still on screen.
+        .fullScreenCover(isPresented: $showingCamera, onDismiss: readPendingCapture) {
+            CameraPicker { captured in
+                bagScan?.image = captured
+                pendingCapture = captured
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: cupboard?.activeBrew?.phase) { _, phase in
+            guard phase == .finished, let cupboard, let timer = cupboard.activeBrew else { return }
+            model.post(
+                "Logged. \(timer.marks.joined(separator: " ")) The coffee is too hot to judge right now, so I have left the review open."
+            )
         }
         // Leaving the room has to take the keyboard with it; the field is
         // gone by then, but the responder is not always released on its own.
@@ -179,8 +297,13 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .topBarTrailing) {
+                workbenchMenu
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     model.newChat()
+                    clearComposingSurfaces()
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
@@ -188,6 +311,196 @@ struct ContentView: View {
                 .disabled(!model.canStartNewChat)
                 .accessibilityLabel("New chat")
             }
+        }
+    }
+
+    private var workbenchMenu: some View {
+        Menu {
+            Button("Start a brew", systemImage: "timer") {
+                Log.write(.ui, "opened the brew setup panel")
+                panel = .brewSetup
+            }
+            Button("Scan a bag", systemImage: "camera") { startScan() }
+            Button("Add a bag by hand", systemImage: "square.and.pencil") { enterBagByHand() }
+            Button("Deal a flashcard", systemImage: "rectangle.on.rectangle") { dealFlashcard() }
+            Button("My cupboard", systemImage: "archivebox") { open(.cupboard) }
+            Button("Log", systemImage: "text.alignleft") { open(.logs) }
+        } label: {
+            Image(systemName: "cup.and.saucer")
+        }
+        .tint(Theme.accent)
+        .accessibilityLabel("Brew, scan and cupboard")
+    }
+
+    private func open(_ destination: Workbench) {
+        Log.write(.ui, "opened \(destination.rawValue)")
+        sheet = destination
+    }
+
+    /// One slot, resolved in order of what is already happening: a review the
+    /// user opened, then a brew already running, then a setup they asked for.
+    /// Sitting between the transcript and the composer rather than over them
+    /// is what lets a three minute brew run while the conversation carries on.
+    @ViewBuilder
+    private func pinned(for model: ChatManager, cupboard: CupboardManager) -> some View {
+        if let session = cupboard.reviewing {
+            BrewReviewPanel(
+                manager: cupboard,
+                session: session,
+                onFinish: { symptom in announce(symptom, for: session, cupboard: cupboard, on: model) },
+                onClose: { cupboard.endReview() }
+            )
+        } else if let timer = cupboard.activeBrew {
+            BrewTimerPanel(
+                timer: timer,
+                onReview: { cupboard.beginReview(of: timer.brewSession) },
+                onDismiss: { cupboard.dismissBrew() }
+            )
+        } else if panel == .brewSetup {
+            BrewSetupPanel(
+                manager: cupboard,
+                onStarted: { panel = nil },
+                onClose: { panel = nil }
+            )
+        }
+    }
+
+    private func startScan() {
+        Log.write(.ui, "opened the scan card in the thread")
+        pendingBag = nil
+        bagScan = BagScan()
+    }
+
+    /// Dealt by the app rather than by a tool. The deck is a fixed list and
+    /// the value is in covering the answer, neither of which needs a model,
+    /// and a tool schema for it cost 178 tokens of a 4096 token window.
+    private func dealFlashcard() {
+        guard let model else { return }
+        let card = Flashcards.all[flashcardIndex % Flashcards.all.count]
+        flashcardIndex += 1
+        Log.write(.ui, "dealt flashcard \(card.id)")
+        model.post(
+            "Card \((flashcardIndex - 1) % Flashcards.all.count + 1) of \(Flashcards.all.count).",
+            cards: [.flashcard(FlashcardCard(card))]
+        )
+    }
+
+    private func enterBagByHand() {
+        Log.write(.ui, "opened a blank bag form in the thread")
+        bagScan = nil
+        pendingBag = PendingBag(draft: BagScanner.Draft())
+    }
+
+    private func readPendingCapture() {
+        guard let pendingCapture else { return }
+        self.pendingCapture = nil
+        Task { await read(pendingCapture) }
+    }
+
+    /// OCR, then extraction, then hand off to the confirm card. A failed read
+    /// leaves the scan card standing rather than ending the flow, so a bad
+    /// photo does not cost the user the bag.
+    private func read(_ captured: UIImage) async {
+        guard let cgImage = captured.cgImage else {
+            bagScan?.failure = "That image could not be read."
+            return
+        }
+
+        Log.write(.scan, "processing a \(Int(captured.size.width))x\(Int(captured.size.height)) capture")
+        bagScan = BagScan(stage: .reading, image: captured)
+        do {
+            let text = try await BagScanner.readText(from: cgImage)
+            bagScan?.stage = .extracting
+            // Never throws: an Indonesian label the model refuses still comes
+            // back as a draft filled from the label vocabulary alone.
+            let draft = await BagScanner.draft(fromOCR: text)
+
+            // Vision has read it, so nothing downstream needs the full frame.
+            // Holding one in view state while the user checks a dozen fields
+            // is tens of megabytes for a picture shown at 110 points.
+            let preview = await BagPhotoStore.previewSized(captured)
+            Log.write(.scan, "ready for confirmation, preview \(Int(preview.size.width))x\(Int(preview.size.height))")
+            bagScan = nil
+            pendingBag = PendingBag(draft: draft, ocrText: text, photo: preview)
+        } catch {
+            Log.write(.failure, "scan failed: \(error)")
+            bagScan = BagScan(
+                stage: .capture,
+                image: captured,
+                failure: "\(error.localizedDescription) You can still enter the bag by hand."
+            )
+        }
+    }
+
+    /// The deterministic dial-in, verbatim. The rule table is what makes the
+    /// answer reproducible, so the app quotes it rather than asking the model
+    /// to paraphrase a fixed string.
+    private func announce(
+        _ symptom: BrewSymptom,
+        for session: BrewSession,
+        cupboard: CupboardManager,
+        on model: ChatManager
+    ) {
+        let grindSize = session.bean?.grindSize ?? .wholeBean
+        let advice = BrewAdvisor.advice(
+            for: symptom,
+            grind: session.grindSetting.isEmpty ? "your setting" : session.grindSetting,
+            grindSize: grindSize
+        )
+        model.post("Noted as \(symptom.label.lowercased()). \(advice.message)")
+    }
+
+    /// Tappable answers to whatever the agent last said. When it asked a
+    /// question through `offerChoices` these are its own options; otherwise
+    /// they follow from the cards on screen.
+    private func replies(for model: ChatManager) -> some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: Theme.sm) {
+                ForEach(model.quickReplies, id: \.self) { reply in
+                    Button {
+                        send(reply, on: model)
+                    } label: {
+                        Text(reply)
+                            .font(Theme.control)
+                            .foregroundStyle(Theme.accent)
+                            .lineLimit(1)
+                            .padding(.horizontal, Theme.md)
+                            .padding(.vertical, Theme.sm)
+                            .background(Theme.paper, in: .capsule)
+                            .overlay(Capsule().stroke(Theme.rule, lineWidth: Theme.hairline))
+                    }
+                    .buttonStyle(PressScale())
+                }
+            }
+            .padding(.horizontal, Theme.md)
+            .padding(.bottom, Theme.sm)
+        }
+        .scrollIndicators(.hidden)
+        .frame(height: 48)
+        // Dimmed rather than removed while a turn runs: the bar is a standing
+        // menu, and having it disappear under your thumb is what made it feel
+        // like the app had taken the options away.
+        .opacity(model.isResponding ? 0.4 : 1)
+        .disabled(model.isResponding)
+        .animation(Theme.enter, value: model.isResponding)
+    }
+
+    /// A chip naming something the app does rather than something to ask about
+    /// opens that instead of sending it as a question, so "Scan a bag" reaches
+    /// the camera rather than a reply explaining how to.
+    private func send(_ reply: String, on model: ChatManager) {
+        switch reply {
+        case "Scan a bag":
+            startScan()
+        case "Start brewing":
+            panel = .brewSetup
+        case "Teach me something", "Another card":
+            dealFlashcard()
+        case "Review my brews":
+            guard let session = cupboard?.awaitingReview.first else { break }
+            cupboard?.beginReview(of: session)
+        default:
+            Task { await model.send(reply, routedTo: QuickReplies.specialty(for: reply)) }
         }
     }
 
@@ -218,6 +531,38 @@ struct ContentView: View {
                         thinking(for: model)
                     }
 
+                    if let scan = bagScan {
+                        BagScanCard(
+                            stage: scan.stage,
+                            image: scan.image,
+                            failure: scan.failure,
+                            onTakePhoto: { showingCamera = true },
+                            onImage: { captured in Task { await read(captured) } },
+                            onEnterByHand: { enterBagByHand() },
+                            onCancel: { bagScan = nil }
+                        )
+                        .id(Self.scanID)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+                    }
+
+                    if let pending = pendingBag, let cupboard {
+                        BagConfirmCard(
+                            manager: cupboard,
+                            draft: pending.draft,
+                            ocrText: pending.ocrText,
+                            photo: pending.photo
+                        ) { saved in
+                            pendingBag = nil
+                            guard let saved else { return }
+                            Task { await announce(saved, cupboard: cupboard) }
+                        }
+                        // Identified by the bag it started from: stable while
+                        // editing so the keyboard is not dropped on every
+                        // keystroke, new when a different bag arrives.
+                        .id(pending.id)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+                    }
+
                     // One anchor for every scroll, so the target does not move
                     // between the last message, the thinking row, and the steps
                     // arriving underneath it.
@@ -226,35 +571,53 @@ struct ContentView: View {
                         .id(Self.bottomID)
                 }
                 .padding(Theme.lg)
+                // On the container, not the scroll view: an ancestor tap
+                // gesture yields to any button, field or card that wants the
+                // touch, so this only fires on the gaps between them.
+                .contentShape(.rect)
+                .onTapGesture { dismissKeyboard() }
                 .animation(Theme.enter, value: model.displayMessages.count)
                 .animation(Theme.enter, value: model.liveSteps.count)
+                .animation(Theme.enter, value: pendingBag != nil)
+                .animation(Theme.enter, value: bagScan?.stage)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Behind the content, so a tap that a button, a field or a card
+            // already consumed never reaches it. `.interactively` only
+            // dismisses on a drag, which left no way to close the keyboard by
+            // tapping the conversation.
+            .background {
+                Color.clear
+                    .contentShape(.rect)
+                    .onTapGesture { dismissKeyboard() }
+            }
             .onChange(of: model.displayMessages.count) { scrollToLatest(proxy) }
             .onChange(of: model.isResponding) { scrollToLatest(proxy) }
             .onChange(of: model.liveSteps.count) { scrollToLatest(proxy) }
+            .onChange(of: pendingBag != nil) { scrollToLatest(proxy) }
+            .onChange(of: bagScan?.stage) { scrollToLatest(proxy) }
         }
     }
 
     private func emptyState(for model: ChatManager) -> some View {
         VStack(alignment: .leading, spacing: Theme.xl) {
             VStack(alignment: .leading, spacing: Theme.sm) {
-                Text("\(model.beanCount.formatted()) beans, indexed.")
+                Text("\(model.beanCount.formatted()) Indonesian lots, indexed.")
                     .font(Theme.display)
                     .foregroundStyle(Theme.ink)
-                Text("The agent searches your collection before it answers, and shows you what it looked at.")
+                Text("Moka pot only. The agent searches the corpus and your own bags before it answers, and shows you what it looked at.")
                     .font(Theme.control)
                     .foregroundStyle(Theme.inkMuted)
             }
 
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Self.starters, id: \.self) { starter in
+                ForEach(QuickReplies.opening, id: \.self) { starter in
                     Rectangle()
                         .fill(Theme.rule)
                         .frame(height: Theme.hairline)
 
                     Button {
-                        Task { await model.send(starter) }
+                        send(starter, on: model)
                     } label: {
                         HStack {
                             Text(starter)
@@ -293,7 +656,11 @@ struct ContentView: View {
                 }
 
                 if !model.liveSteps.isEmpty {
-                    StepTrace(steps: model.liveSteps)
+                    // Expanded while the turn runs. This is the only moment
+                    // the trace is the content rather than a footnote to it:
+                    // there is no answer yet, and watching the tools go is
+                    // what says the app is working.
+                    StepTrace(steps: model.liveSteps, initiallyExpanded: true)
                 }
             }
 
@@ -307,7 +674,7 @@ struct ContentView: View {
             memoryGauge(for: model)
 
             HStack(alignment: .bottom, spacing: Theme.sm) {
-                TextField("Ask about your beans", text: Binding(get: { model.draft }, set: { model.draft = $0 }), axis: .vertical)
+                TextField("Ask about beans, brewing, or your bags", text: Binding(get: { model.draft }, set: { model.draft = $0 }), axis: .vertical)
                     .font(Theme.control)
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1...4)
@@ -339,24 +706,44 @@ struct ContentView: View {
         let usage = min(model.contextUsage, 1)
         let isCompacting = usage >= ChatManager.compactionThreshold
 
-        return HStack(spacing: Theme.sm) {
-            Text("memory \(usage.formatted(.percent.precision(.fractionLength(0))))")
-                .font(Theme.trace)
-                .foregroundStyle(isCompacting ? Theme.accent : Theme.inkMuted)
+        return Button {
+            open(.memory)
+        } label: {
+            HStack(spacing: Theme.sm) {
+                Text("memory \(usage.formatted(.percent.precision(.fractionLength(0))))")
+                    .font(Theme.trace)
+                    .foregroundStyle(isCompacting ? Theme.accent : Theme.inkMuted)
 
-            Capsule()
-                .fill(Theme.rule)
-                .frame(width: Self.gaugeWidth, height: 3)
-                .overlay(alignment: .leading) {
-                    Capsule()
-                        .fill(isCompacting ? Theme.accent : Theme.inkMuted)
-                        .frame(width: Self.gaugeWidth * usage)
-                }
+                Capsule()
+                    .fill(Theme.rule)
+                    .frame(width: Self.gaugeWidth, height: 3)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(isCompacting ? Theme.accent : Theme.inkMuted)
+                            .frame(width: Self.gaugeWidth * usage)
+                    }
+            }
+            .padding(.horizontal, Theme.sm)
+            .frame(minHeight: 44)
+            .contentShape(.rect)
         }
+        .buttonStyle(PressScale())
         .animation(Theme.enter, value: usage)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Memory used")
         .accessibilityValue(usage.formatted(.percent.precision(.fractionLength(0))))
+        .accessibilityHint("Shows what the agent is currently carrying")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// The composer, the confirm card and both brew panels each own their own
+    /// text field, so "close the keyboard" cannot be expressed as clearing one
+    /// `FocusState`. Resigning the first responder covers whichever is up.
+    private func dismissKeyboard() {
+        isComposerFocused = false
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+        )
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
@@ -364,6 +751,7 @@ struct ContentView: View {
     }
 
     private static let bottomID = "bottom"
+    private static let scanID = "scan-bag"
     private static let gaugeWidth: CGFloat = 44
 }
 
@@ -420,13 +808,22 @@ private struct MessageRow: View {
                         .foregroundStyle(rule)
                 }
 
-                Text(message.role == .failure ? AttributedString(message.text) : Self.formatted(message.text))
+                // A reply that came back with nothing to say still has to
+                // read as a reply. Without this the bubble is a bare "2 steps"
+                // line and looks like the answer was replaced by the trace.
+                Text(message.text.isEmpty
+                    ? AttributedString("No answer came back for that one.")
+                    : (message.role == .failure ? AttributedString(message.text) : Self.formatted(message.text)))
                     .font(Theme.reading)
-                    .foregroundStyle(message.role == .failure ? Theme.inkMuted : Theme.ink)
+                    .foregroundStyle(message.role == .failure || message.text.isEmpty ? Theme.inkMuted : Theme.ink)
                     .textSelection(.enabled)
 
                 if !message.places.isEmpty {
                     MapPreview(places: message.places)
+                }
+
+                ForEach(message.cards) { card in
+                    ThreadCardView(card: card)
                 }
 
                 if !message.steps.isEmpty {
@@ -440,9 +837,230 @@ private struct MessageRow: View {
     }
 }
 
+/// What the gauge is a percentage of. The number alone says how full the
+/// window is; this says with what, which is the part that changes what to do
+/// about it. A window mostly full of tool results is fixed by asking a
+/// narrower question, one full of conversation by starting a new chat.
+private struct MemoryView: View {
+    let model: ChatManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var report: ContextReport?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let report {
+                    content(report)
+                } else {
+                    ProgressView().tint(Theme.inkMuted)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .background(Theme.paper)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.paper, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Memory").font(Theme.display).foregroundStyle(Theme.ink)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") { dismiss() }.tint(Theme.accent)
+                }
+            }
+        }
+        .task { report = await model.contextReport() }
+    }
+
+    private func content(_ report: ContextReport) -> some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: Theme.sm) {
+                    Text(report.usage.formatted(.percent.precision(.fractionLength(0))))
+                        .font(.system(size: 44, weight: .light, design: .serif))
+                        .foregroundStyle(report.usage >= ChatManager.compactionThreshold ? Theme.accent : Theme.ink)
+
+                    Text("\(report.usedTokens.formatted()) of \(report.budget.formatted()) tokens")
+                        .font(Theme.control)
+                        .foregroundStyle(Theme.inkMuted)
+
+                    Text("\(report.fixedOverhead.formatted()) of those are spent before you say anything, on the agent's instructions and its tool definitions. That leaves about \(report.roomForConversation.formatted()) for the conversation itself.")
+                        .font(Theme.trace)
+                        .foregroundStyle(Theme.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(report.usage >= ChatManager.compactionThreshold
+                        ? "Over the threshold, so the earliest turns are being summarised away after each reply."
+                        : "At \(ChatManager.compactionThreshold.formatted(.percent.precision(.fractionLength(0)))) the earliest turns get summarised to make room.")
+                        .font(Theme.trace)
+                        .foregroundStyle(Theme.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, Theme.xs)
+            }
+            .listRowBackground(Theme.paper)
+
+            Section {
+                ForEach(report.sections) { section in
+                    row(section, largest: report.sections.first?.tokens ?? 1)
+                }
+            } header: {
+                Text("What is in there")
+            } footer: {
+                Text("Counted one kind at a time, so these do not add up to the total: each count carries a little of the transcript's own framing.")
+            }
+            .listRowBackground(Theme.paper)
+
+            if let summary = report.summary {
+                Section {
+                    Text(summary)
+                        .font(Theme.reading)
+                        .foregroundStyle(Theme.ink)
+                } header: {
+                    Text("Standing in for earlier turns")
+                } footer: {
+                    Text("Those turns are no longer held word for word. The last \(report.recentMessagesReplayed) messages are replayed verbatim alongside this.")
+                }
+                .listRowBackground(Theme.paper)
+            }
+        }
+        .listStyle(.plain)
+    }
+
+    private func row(_ section: ContextReport.Section, largest: Int) -> some View {
+        VStack(alignment: .leading, spacing: Theme.xs) {
+            HStack {
+                Text(section.id).font(Theme.control).foregroundStyle(Theme.ink)
+                Spacer(minLength: Theme.md)
+                Text("\(section.tokens.formatted()) tokens")
+                    .font(Theme.label)
+                    .foregroundStyle(Theme.inkMuted)
+            }
+
+            Capsule()
+                .fill(Theme.rule)
+                .frame(height: 3)
+                .overlay(alignment: .leading) {
+                    GeometryReader { geometry in
+                        Capsule()
+                            .fill(Theme.accent)
+                            .frame(width: geometry.size.width * share(section.tokens, of: largest))
+                    }
+                }
+
+            Text(section.entries == 1 ? "1 entry" : "\(section.entries) entries")
+                .font(Theme.trace)
+                .foregroundStyle(Theme.inkMuted)
+        }
+        .padding(.vertical, Theme.xs)
+    }
+
+    /// Scaled against the largest section rather than the total, so the
+    /// smaller kinds stay visible instead of collapsing to a hairline.
+    private func share(_ tokens: Int, of largest: Int) -> Double {
+        largest > 0 ? Double(tokens) / Double(largest) : 0
+    }
+}
+
 /// Every cafe the turn found, on one map. Non-interactive on purpose: a
 /// pannable map inside a scrolling transcript fights the scroll, and the
 /// gesture the reader wants here is "show me this properly", which is Maps.
+/// The log page: the lines `Log.write` produced, on the device that produced
+/// them. Newest first rather than tailing the bottom, because after something
+/// goes wrong the interesting lines are the last few, and a list that
+/// auto-scrolls fights anyone who scrolled up to read.
+private struct LogView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var entries: [LogEntry] = []
+    @State private var kind: Log.Kind?
+
+    private static let everything = "All"
+    private static let filters = [everything] + Log.Kind.allCases.map(\.rawValue)
+
+    private var shown: [LogEntry] {
+        let matching = kind.map { wanted in entries.filter { $0.kind == wanted } } ?? entries
+        return matching.reversed()
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ChipRow(items: Self.filters, selected: kind?.rawValue ?? Self.everything) { name in
+                    kind = name == Self.everything ? nil : Log.Kind(rawValue: name)
+                }
+                .padding(.horizontal, Theme.md)
+                .padding(.vertical, Theme.sm)
+
+                Divider().overlay(Theme.rule)
+                lines
+            }
+            .background(Theme.paper)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.paper, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Log").font(Theme.display).foregroundStyle(Theme.ink)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") { dismiss() }.tint(Theme.accent)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Clear") {
+                        LogStore.shared.clear()
+                        entries = []
+                    }
+                    .tint(Theme.accent)
+                    .disabled(entries.isEmpty)
+                }
+            }
+        }
+        // Polled rather than observed. `Log.write` runs on whatever thread a
+        // tool is on, and publishing every line to the main actor would put
+        // the logging onto the path it is there to measure.
+        .task {
+            while !Task.isCancelled {
+                entries = LogStore.shared.snapshot()
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var lines: some View {
+        if shown.isEmpty {
+            Text(entries.isEmpty ? "Nothing logged yet." : "Nothing logged under \(kind?.rawValue ?? "").")
+                .font(Theme.control)
+                .foregroundStyle(Theme.inkMuted)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.paper)
+        } else {
+            List(shown) { entry in
+                VStack(alignment: .leading, spacing: Theme.xs) {
+                    HStack(spacing: Theme.sm) {
+                        Text(entry.kind.rawValue)
+                            .font(Theme.trace)
+                            .foregroundStyle(entry.kind == .failure ? Theme.danger : Theme.accent)
+                        Text(entry.date, format: .dateTime.hour().minute().second())
+                            .font(Theme.trace)
+                            .foregroundStyle(Theme.inkMuted)
+                    }
+
+                    // Selectable so one line can be copied off the device
+                    // without a share sheet or a cable.
+                    Text(entry.message)
+                        .font(Theme.trace)
+                        .foregroundStyle(Theme.ink)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 2)
+                .listRowBackground(Theme.paper)
+                .listRowSeparatorTint(Theme.rule)
+            }
+            .listStyle(.plain)
+        }
+    }
+}
+
 private struct MapPreview: View {
     let places: [MappedPlace]
 
@@ -517,25 +1135,38 @@ private struct MapPreview: View {
 private struct StepTrace: View {
     let steps: [AgentStep]
 
-    @State private var isExpanded = true
+    /// Collapsed under a finished answer, where the trace is a receipt to
+    /// check when something looks wrong. Expanded while a turn runs, where it
+    /// is the only thing on screen saying work is happening.
+    var initiallyExpanded = false
+
+    @State private var isExpanded: Bool?
+
+    private var expanded: Bool { isExpanded ?? initiallyExpanded }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.md) {
             Button {
-                withAnimation(Theme.enter) { isExpanded.toggle() }
+                withAnimation(Theme.enter) { isExpanded = !expanded }
             } label: {
                 HStack(spacing: Theme.xs) {
-                    Text("\(steps.count) steps")
+                    Text(steps.count == 1 ? "1 step" : "\(steps.count) steps")
                     Image(systemName: "chevron.down")
                         .font(.caption2)
-                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                        .rotationEffect(.degrees(expanded ? 0 : -90))
                 }
                 .font(Theme.label)
                 .foregroundStyle(Theme.inkMuted)
+                // The summary is now the only thing normally on screen, so it
+                // has to be a real target rather than caption-sized text.
+                .padding(.vertical, Theme.sm)
+                .contentShape(.rect)
             }
             .buttonStyle(PressScale())
+            .accessibilityLabel(steps.count == 1 ? "1 step" : "\(steps.count) steps")
+            .accessibilityHint(expanded ? "Hides what the agent did" : "Shows what the agent did")
 
-            if isExpanded {
+            if expanded {
                 VStack(alignment: .leading, spacing: Theme.md) {
                     ForEach(steps) { step in
                         VStack(alignment: .leading, spacing: Theme.xs) {

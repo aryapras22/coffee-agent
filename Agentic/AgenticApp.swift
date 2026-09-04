@@ -13,7 +13,11 @@ struct AgenticApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                // Pins the whole window, so the keyboard, the menu pickers and
+                // the date picker come up light alongside `Theme`'s palette
+                // instead of following the device and clashing with it.
+                .preferredColorScheme(.light)
         }
-        .modelContainer(for: [ChatSession.self, ChatMessage.self])
+        .modelContainer(for: [ChatSession.self, ChatMessage.self, OwnedBean.self, TastingNote.self, BrewSession.self])
     }
 }

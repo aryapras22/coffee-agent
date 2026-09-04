@@ -1,0 +1,832 @@
+//
+//  CoffeeDomainTests.swift
+//  AgenticTests
+//
+
+import Foundation
+import Testing
+import FoundationModels
+import UIKit
+import Vision
+
+@testable import Agentic
+
+private func profile(
+    id: String = "p",
+    process: ProcessingMethod = .washed,
+    roast: RoastLevel? = .medium,
+    acidity: IntensityLevel = .medium,
+    body: IntensityLevel = .medium,
+    flavors: [FlavorNote] = [.chocolate],
+    score: Double? = nil
+) -> BeanProfile {
+    BeanProfile(
+        id: id,
+        name: id,
+        island: .sumatra,
+        subregion: "Test",
+        altitudeMinMeters: nil,
+        altitudeMaxMeters: nil,
+        processingMethod: process,
+        variety: nil,
+        flavorNotes: flavors,
+        acidity: acidity,
+        body: body,
+        roastRecommendation: roast,
+        cuppingScore: score,
+        dataSource: .editorialSynthesis
+    )
+}
+
+struct MokaSuitabilityTests {
+    @Test("wet-hulled at medium-dark is the ideal case")
+    func wetHulledDarkIsExcellent() {
+        #expect(profile(process: .wetHulled, roast: .mediumDark).mokaPotSuitability == .excellent)
+    }
+
+    @Test("a washed light-medium lot with high acidity is the compromise case")
+    func washedBrightIsMarginal() {
+        #expect(profile(process: .washed, roast: .lightMedium, acidity: .high).mokaPotSuitability == .marginal)
+    }
+
+    @Test("a light roast without high acidity is not penalised")
+    func lightButNotBrightIsGood() {
+        #expect(profile(process: .washed, roast: .light, acidity: .low).mokaPotSuitability == .good)
+    }
+
+    @Test("body stands in for a process the corpus never recorded")
+    func heavyBodyCarriesAnUnknownProcess() {
+        #expect(profile(process: .other, roast: .medium, body: .high).mokaPotSuitability == .excellent)
+    }
+
+    @Test("an unverified roast falls back to process and body, not to a guess")
+    func missingRoastUsesProcessAndBody() {
+        #expect(profile(process: .wetHulled, roast: nil, body: .high).mokaPotSuitability == .excellent)
+        #expect(profile(process: .washed, roast: nil, body: .medium).mokaPotSuitability == .good)
+    }
+}
+
+struct TasteQuizTests {
+    private let corpus = [
+        profile(id: "bright-marginal", process: .washed, roast: .lightMedium, acidity: .high, flavors: [.citrus]),
+        profile(id: "bright-ok", process: .natural, roast: .medium, acidity: .high, body: .high, flavors: [.citrus], score: 85),
+        profile(id: "heavy", process: .wetHulled, roast: .mediumDark, acidity: .low, body: .high, flavors: [.earthy], score: 88),
+    ]
+
+    @Test("the moka filter splits matches instead of discarding them")
+    func marginalMatchesAreReportedSeparately() {
+        let result = TasteQuiz.match(QuizAnswer(feel: .brightLively, flavorPull: .citrus), in: corpus)
+        #expect(result.fit.map(\.id) == ["bright-ok"])
+        #expect(result.compromised.map(\.id) == ["bright-marginal"])
+    }
+
+    @Test("acidity has to match the branch, not just the flavour")
+    func feelBranchNarrowsByAcidity() {
+        let result = TasteQuiz.match(QuizAnswer(feel: .smoothHeavy, flavorPull: .citrus), in: corpus)
+        #expect(result.isEmpty)
+    }
+
+    @Test("an unscored bean sorts below a scored one rather than above it")
+    func unscoredBeansSortLast() {
+        let scored = profile(id: "scored", process: .wetHulled, roast: .medium, body: .high, flavors: [.chocolate], score: 90)
+        let unscored = profile(id: "unscored", process: .wetHulled, roast: .medium, body: .high, flavors: [.chocolate])
+        let result = TasteQuiz.match(
+            QuizAnswer(feel: .balanced, flavorPull: .chocolate),
+            in: [unscored, scored]
+        )
+        #expect(result.fit.map(\.id) == ["scored", "unscored"])
+    }
+}
+
+struct DialInTests {
+    private func session(_ symptom: BrewSymptom?, grind: String = "12", daysAgo: Int = 0) -> BrewSessionSnapshot {
+        let bean = OwnedBean(displayName: "Test")
+        let brew = BrewSession(bean: bean, potSizeCups: 3, grindSetting: grind)
+        brew.date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: .now) ?? .now
+        brew.outcome = symptom.map { BrewOutcome(symptom: $0, note: nil) }
+        return BrewSessionSnapshot(brew)
+    }
+
+    @Test("bitter goes coarser, weak goes finer")
+    func extractionFaultsMoveTheGrind() {
+        #expect(BrewAdvisor.nextGrind(from: [session(.bitter)]).direction == .coarser)
+        #expect(BrewAdvisor.nextGrind(from: [session(.burnt)]).direction == .coarser)
+        #expect(BrewAdvisor.nextGrind(from: [session(.weak)]).direction == .finer)
+        #expect(BrewAdvisor.nextGrind(from: [session(.sour)]).direction == .finer)
+    }
+
+    @Test("channeling and sputtering hold the grind, because neither is a grind fault")
+    func bedAndHardwareFaultsHoldTheGrind() {
+        #expect(BrewAdvisor.nextGrind(from: [session(.channeling)]).direction == .hold)
+        #expect(BrewAdvisor.nextGrind(from: [session(.sputtering)]).direction == .hold)
+    }
+
+    @Test("only the most recent rated brew decides the next move")
+    func mostRecentRatedBrewWins() {
+        let history = [session(.bitter, grind: "14", daysAgo: 0), session(.weak, grind: "10", daysAgo: 3)]
+        let advice = BrewAdvisor.nextGrind(from: history)
+        #expect(advice.direction == .coarser)
+        #expect(advice.message.contains("14"))
+    }
+
+    @Test("an unrated brew is not history to act on")
+    func unratedBrewsAreIgnored() {
+        #expect(BrewAdvisor.nextGrind(from: [session(nil)]).direction == .unknown)
+    }
+
+    @Test("roast shifts the starting point in opposite directions")
+    func startingPointFollowsRoast() {
+        #expect(BrewAdvisor.startingPoint(for: .dark).contains("coarser"))
+        #expect(BrewAdvisor.startingPoint(for: .light).contains("finer"))
+        #expect(!BrewAdvisor.startingPoint(for: .medium).contains("coarser"))
+    }
+
+    @Test("first drip timing separates too-hot from choked")
+    func firstDripVerdictSplitsTheFaults() {
+        #expect(BrewAdvisor.firstDripVerdict(seconds: 25).contains("heat"))
+        #expect(BrewAdvisor.firstDripVerdict(seconds: 55).contains("range"))
+        #expect(BrewAdvisor.firstDripVerdict(seconds: 180).contains("choking"))
+    }
+}
+
+@MainActor
+struct OwnedBeanSearchTests {
+    private func snapshot(
+        name: String,
+        roastedDaysAgo: Int? = nil,
+        remaining: Int? = 200,
+        flavors: [FlavorNote] = [],
+        rating: Int? = nil,
+        brews: Int = 0
+    ) -> OwnedBeanSnapshot {
+        let bean = OwnedBean(
+            displayName: name,
+            roastDate: roastedDaysAgo.flatMap { Calendar.current.date(byAdding: .day, value: -$0, to: .now) },
+            remainingGrams: remaining
+        )
+        if !flavors.isEmpty || rating != nil {
+            let note = TastingNote(
+                perceivedAcidity: .medium,
+                perceivedBody: .medium,
+                flavorNotes: flavors,
+                rating: rating ?? 3
+            )
+            bean.tastingNotes.append(note)
+        }
+        for _ in 0..<brews {
+            bean.brewSessions.append(BrewSession(bean: bean, potSizeCups: 3, grindSetting: "12"))
+        }
+        return OwnedBeanSnapshot(bean)
+    }
+
+    @Test("a finished bag is excluded unless asked for")
+    func emptyBagsAreHiddenByDefault() {
+        let beans = [snapshot(name: "full"), snapshot(name: "empty", remaining: 0)]
+        #expect(OwnedBeanSearch.matches(OwnedBeanQuery(), in: beans).map(\.displayName) == ["full"])
+        #expect(OwnedBeanSearch.matches(OwnedBeanQuery(hasRemaining: false), in: beans).count == 2)
+    }
+
+    @Test("a flavour filter reads tasting notes, not the label")
+    func flavorFilterUsesTastedNotes() {
+        let beans = [snapshot(name: "choc", flavors: [.chocolate]), snapshot(name: "plain")]
+        var query = OwnedBeanQuery()
+        query.flavorNote = .chocolate
+        #expect(OwnedBeanSearch.matches(query, in: beans).map(\.displayName) == ["choc"])
+    }
+
+    @Test("a bag with no roast date cannot satisfy a freshness filter")
+    func missingRoastDateFailsFreshness() {
+        let beans = [snapshot(name: "fresh", roastedDaysAgo: 5), snapshot(name: "undated")]
+        var query = OwnedBeanQuery()
+        query.maxDaysSinceRoast = 14
+        #expect(OwnedBeanSearch.matches(query, in: beans).map(\.displayName) == ["fresh"])
+    }
+
+    @Test("never-brewed excludes anything with a session against it")
+    func neverBrewedExcludesBrewedBags() {
+        let beans = [snapshot(name: "untried"), snapshot(name: "tried", brews: 2)]
+        var query = OwnedBeanQuery()
+        query.neverBrewed = true
+        #expect(OwnedBeanSearch.matches(query, in: beans).map(\.displayName) == ["untried"])
+    }
+
+    @Test("an unrated bag does not clear a minimum rating")
+    func minimumRatingNeedsARating() {
+        let beans = [snapshot(name: "loved", rating: 5), snapshot(name: "unrated")]
+        var query = OwnedBeanQuery()
+        query.minRating = 4
+        #expect(OwnedBeanSearch.matches(query, in: beans).map(\.displayName) == ["loved"])
+    }
+}
+
+/// A brew with no outcome is awaiting review, not lacking data, and the two
+/// have to stay distinguishable for the dial-in to know what it is missing.
+@MainActor
+struct BrewReviewStateTests {
+    private func session(_ symptom: BrewSymptom?) -> BrewSession {
+        let brew = BrewSession(bean: nil, potSizeCups: 3, grindSetting: "12")
+        brew.outcome = symptom.map { BrewOutcome(symptom: $0, note: nil) }
+        return brew
+    }
+
+    @Test("a finished brew starts awaiting review rather than rated")
+    func aNewBrewIsAwaitingReview() {
+        #expect(session(nil).awaitingReview)
+        #expect(session(nil).outcome == nil)
+    }
+
+    @Test("the symptom is the presence flag, so a reviewed brew is never nil")
+    func aReviewedBrewIsNotAwaiting() {
+        let reviewed = session(.bitter)
+        #expect(!reviewed.awaitingReview)
+        #expect(reviewed.outcome?.symptom == .bitter)
+    }
+
+    @Test("a note without a verdict is not a review")
+    func noteAloneDoesNotCountAsReviewed() {
+        let brew = session(nil)
+        brew.outcome = nil
+        #expect(brew.awaitingReview)
+    }
+
+    @Test("unreviewed brews are invisible to the dial-in, which is why they are counted")
+    func unreviewedBrewsCarryNoAdvice() {
+        let bean = OwnedBean(displayName: "Test")
+        let brews = [session(nil), session(nil)]
+        brews.forEach { $0.bean = bean; bean.brewSessions.append($0) }
+
+        let snapshots = brews.map(BrewSessionSnapshot.init)
+        #expect(BrewAdvisor.nextGrind(from: snapshots).direction == .unknown)
+        #expect(OwnedBeanSnapshot(bean).brewsAwaitingReview == 2)
+    }
+
+    @Test("a rating lives on the tasting note, never on the outcome")
+    func ratingIsNotDuplicated() {
+        let bean = OwnedBean(displayName: "Test")
+        let brew = session(.balanced)
+        brew.bean = bean
+        bean.brewSessions.append(brew)
+
+        let note = TastingNote(
+            perceivedAcidity: .low,
+            perceivedBody: .high,
+            flavorNotes: [.chocolate],
+            rating: 5,
+            brewSessionId: brew.id
+        )
+        bean.tastingNotes.append(note)
+
+        // Traceable back to the grind and heat that produced the cup.
+        #expect(note.brewSessionId == brew.id)
+        #expect(OwnedBeanSnapshot(bean).bestRating == 5)
+        #expect(OwnedBeanSnapshot(bean).brewsAwaitingReview == 0)
+    }
+}
+
+/// Only the filename is persisted, because the container directory is
+/// reassigned on reinstall and a stored absolute path would point at nothing.
+struct BagPhotoStoreTests {
+    private func image(_ size: CGSize) -> UIImage {
+        UIGraphicsImageRenderer(size: size).image { context in
+            UIColor.brown.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
+    @Test("a camera-sized frame is scaled to the long edge, keeping its shape")
+    func longEdgeIsCapped() {
+        let scaled = BagPhotoStore.downscaled(image(CGSize(width: 3213, height: 5712)))
+        #expect(max(scaled.size.width, scaled.size.height) == BagPhotoStore.maxEdge)
+        let ratio = scaled.size.width / scaled.size.height
+        #expect(abs(ratio - 3213.0 / 5712.0) < 0.01)
+    }
+
+    @Test("an image already small enough is not enlarged")
+    func smallImagesAreLeftAlone() {
+        let original = image(CGSize(width: 400, height: 300))
+        #expect(BagPhotoStore.downscaled(original).size == original.size)
+    }
+
+    @Test("what is stored is a bare filename, and the URL is rebuilt from it")
+    func onlyTheFilenameIsStored() async throws {
+        let filename = try await BagPhotoStore.save(image(CGSize(width: 2400, height: 1800)))
+        defer { BagPhotoStore.delete(filename) }
+
+        #expect(!filename.contains("/"))
+        #expect(filename.hasSuffix(".jpg"))
+        #expect(BagPhotoStore.image(named: filename) != nil)
+
+        let rebuilt = try #require(BagPhotoStore.url(for: filename))
+        #expect(rebuilt.lastPathComponent == filename)
+        #expect(rebuilt.path().contains("Documents"))
+    }
+
+    @Test("deleting removes the file, and deleting nothing is not an error")
+    func deleteIsBestEffort() async throws {
+        let filename = try await BagPhotoStore.save(image(CGSize(width: 800, height: 600)))
+        BagPhotoStore.delete(filename)
+        #expect(BagPhotoStore.image(named: filename) == nil)
+
+        BagPhotoStore.delete(nil)
+        BagPhotoStore.delete("does-not-exist.jpg")
+    }
+}
+
+struct BagScanLanguageTests {
+    private func language(_ id: String) -> Locale.Language { Locale.Language(identifier: id) }
+
+    @Test("both languages are requested, Indonesian first, because bags print both")
+    func indonesianLeadsTheOrderedList() {
+        let supported = [language("en-US"), language("id-ID")]
+        let chosen = BagScanner.recognitionLanguages(supported: supported)
+        #expect(chosen.map(\.languageCode) == [language("id").languageCode, language("en").languageCode])
+    }
+
+    @Test("an OS without the Indonesian recogniser still reads the bag in English")
+    func missingIndonesianDegradesRatherThanFails() {
+        let supported = [language("en-US"), language("fr-FR")]
+        let chosen = BagScanner.recognitionLanguages(supported: supported)
+        #expect(chosen.map(\.languageCode) == [language("en-US").languageCode])
+    }
+
+    @Test("an empty supported list still yields a recogniser rather than none")
+    func emptySupportedListStillPicksEnglish() {
+        #expect(BagScanner.recognitionLanguages(supported: []).count == 1)
+    }
+
+    @Test("this OS carries the Indonesian recogniser at the accurate level")
+    func indonesianIsAvailableHere() {
+        var request = RecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        let codes = request.supportedRecognitionLanguages.map(\.languageCode)
+        #expect(codes.contains(language("id").languageCode))
+    }
+
+    /// `.fast` covers six languages and Indonesian is not among them, so a
+    /// change of recognition level would quietly drop half of a bilingual bag.
+    @Test("the fast recogniser cannot read Indonesian, which is why the scan stays accurate")
+    func fastLevelWouldLoseIndonesian() {
+        var request = RecognizeTextRequest()
+        request.recognitionLevel = .fast
+        let codes = request.supportedRecognitionLanguages.map(\.languageCode)
+        #expect(!codes.contains(language("id").languageCode))
+    }
+}
+
+/// Foundation Models supports 23 locales and Indonesian is not one of them,
+/// so an Indonesian label has to reach it as English or not at all.
+struct BagScanNormalizationTests {
+    @Test("the on-device model has no Indonesian, which is what forces the pre-pass")
+    func indonesianIsNotAModelLanguage() {
+        let codes = SystemLanguageModel.default.supportedLanguages.map(\.languageCode)
+        #expect(!codes.contains(Locale.Language(identifier: "id").languageCode))
+    }
+
+    @Test("label terms become English while place names are left alone")
+    func termsAreSubstitutedAndNamesArePreserved() {
+        let normalized = BagScanner.normalize("Proses: Giling Basah, Bener Meriah, Aceh")
+        #expect(normalized.localizedCaseInsensitiveContains("process"))
+        #expect(normalized.localizedCaseInsensitiveContains("wet hulled"))
+        #expect(normalized.contains("Bener Meriah"))
+        #expect(normalized.contains("Aceh"))
+    }
+
+    @Test("a longer phrase is not half-consumed by a shorter one inside it")
+    func longestPhraseWins() {
+        #expect(BagScanner.normalize("Berat Bersih 200 g").localizedCaseInsensitiveContains("net weight"))
+        #expect(BagScanner.normalize("Tanggal Sangrai 28 Agustus 2026").localizedCaseInsensitiveContains("roast date"))
+    }
+
+    @Test("an Indonesian month becomes one the date parser accepts")
+    func monthsAreTranslated() {
+        let normalized = BagScanner.normalize("28 Agustus 2026")
+        #expect(normalized == "28 August 2026")
+        #expect(BagScanner.parseDate(normalized) != nil)
+    }
+
+    @Test("an all-English bag passes through untouched")
+    func englishIsLeftAlone() {
+        let english = "Single Origin, Whole Bean, Washed, Roasted 12 March 2026"
+        #expect(BagScanner.normalize(english) == english)
+    }
+}
+
+/// The floor the user lands on when the model refuses the text outright.
+struct BagScanFallbackTests {
+    private func fields(_ raw: String) -> BagScanner.Draft {
+        BagScanner.deterministicFields(from: BagScanner.normalize(raw))
+    }
+
+    @Test("process, roast, date and weight come off the vocabulary without the model")
+    func closedVocabularyFillsFourFields() {
+        let draft = fields("""
+            KOPI ARABIKA GAYO
+            Proses: Giling Basah
+            Sangrai: Medium Gelap
+            Tanggal Sangrai: 28 Agustus 2026
+            Berat Bersih 200 g
+            """)
+
+        #expect(draft.processingMethod == .wetHulled)
+        #expect(draft.roastLevel == .mediumDark)
+        #expect(draft.weightGrams == 200)
+        #expect(draft.roastDate != nil)
+        #expect(draft.scanConfidence == .scanUnverified)
+    }
+
+    @Test("a compound roast is not read as its first word")
+    func compoundRoastBeatsItsParts() {
+        #expect(fields("Sangrai Medium Gelap").roastLevel == .mediumDark)
+        #expect(fields("Sangrai Gelap").roastLevel == .dark)
+        #expect(fields("Roast: Medium").roastLevel == .medium)
+    }
+
+    @Test("semi-washed is not collapsed into washed")
+    func compoundProcessBeatsItsParts() {
+        #expect(fields("Proses: Semi Basah").processingMethod == .semiWashed)
+        #expect(fields("Proses: Cuci").processingMethod == .washed)
+    }
+
+    @Test("a bag stating none of it yields an empty draft rather than guesses")
+    func nothingStatedYieldsNothing() {
+        let draft = fields("Artisan Coffee Roasters")
+        #expect(draft.processingMethod == nil)
+        #expect(draft.roastLevel == nil)
+        #expect(draft.weightGrams == nil)
+        #expect(draft.roastDate == nil)
+    }
+}
+
+/// Renders a label panel the way an Indonesian bag prints one, half in each
+/// language, and runs it through the real recogniser. Synthetic type is kinder
+/// than a matte curved bag, so this proves the configuration reads Indonesian
+/// at all, not that any given photograph will.
+@MainActor
+struct BagScanReadingTests {
+    private func labelImage(_ lines: [String]) -> CGImage {
+        let size = CGSize(width: 1000, height: 1300)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 56, weight: .medium),
+                .foregroundColor: UIColor.black,
+            ]
+            for (index, line) in lines.enumerated() {
+                line.draw(at: CGPoint(x: 60, y: 60 + index * 110), withAttributes: attributes)
+            }
+        }
+        return image.cgImage!
+    }
+
+    @Test("Indonesian and English on one panel both come back")
+    func bilingualPanelIsRead() async throws {
+        let image = labelImage([
+            "KOPI ARABIKA GAYO",
+            "Bener Meriah, Aceh",
+            "Proses: Giling Basah",
+            "Single Origin, Whole Bean",
+            "Tanggal Sangrai: 28 Agustus 2026",
+            "Berat Bersih 200 g",
+        ])
+
+        let text = try await BagScanner.readText(from: image).lowercased()
+
+        #expect(text.contains("gayo"))
+        #expect(text.contains("giling"))
+        #expect(text.contains("basah"))
+        #expect(text.contains("agustus"))
+        #expect(text.contains("single origin"))
+    }
+
+    @Test("an Indonesian panel survives the whole pipeline and reaches the confirm screen")
+    func indonesianPanelYieldsAUsableDraft() async throws {
+        guard SystemLanguageModel.default.availability == .available else { return }
+
+        let image = labelImage([
+            "KOPI ARABIKA GAYO",
+            "Bener Meriah, Aceh",
+            "Proses: Giling Basah",
+            "Sangrai: Medium Gelap",
+            "Tanggal Sangrai: 28 Agustus 2026",
+            "Berat Bersih 200 g",
+        ])
+
+        let raw = try await BagScanner.readText(from: image)
+        let draft = await BagScanner.draft(fromOCR: raw)
+
+        // Whichever path ran, model or fallback, the user gets these four.
+        #expect(draft.processingMethod == .wetHulled)
+        #expect(draft.roastLevel == .mediumDark)
+        #expect(draft.weightGrams == 200)
+        #expect(draft.roastDate != nil)
+        #expect(draft.scanConfidence == .scanUnverified)
+    }
+}
+
+struct BagScanDateTests {
+    private func day(_ date: Date?) -> DateComponents? {
+        date.map { Calendar.current.dateComponents([.year, .month, .day], from: $0) }
+    }
+
+    @Test("the format the model is asked for parses")
+    func isoFormatParses() {
+        #expect(day(BagScanner.parseDate("2026-08-28"))?.month == 8)
+        #expect(day(BagScanner.parseDate("2026-08-28"))?.day == 28)
+    }
+
+    @Test("an Indonesian month name copied off the bag still parses")
+    func indonesianMonthParses() {
+        let parsed = day(BagScanner.parseDate("28 Agustus 2026"))
+        #expect(parsed?.year == 2026)
+        #expect(parsed?.month == 8)
+        #expect(parsed?.day == 28)
+    }
+
+    @Test("an OCR garble of a month is repaired when only one month is close")
+    func garbledMonthIsRepaired() {
+        let parsed = day(BagScanner.parseDate("01 AUb 2026"))
+        #expect(parsed?.year == 2026)
+        #expect(parsed?.month == 8)
+        #expect(parsed?.day == 1)
+    }
+
+    @Test("a garble close to several months is left blank rather than guessed")
+    func ambiguousMonthIsRefused() {
+        // "mai" sits one character from March, May and Indonesian Mei.
+        #expect(BagScanner.parseDate("01 Mai 2026") == nil)
+    }
+
+    @Test("a word that is no month at all is not forced into one")
+    func distantWordIsNotAMonth() {
+        #expect(BagScanner.parseDate("01 Roasted 2026") == nil)
+        #expect(BagScanner.parseDate("200 Grams 2026") == nil)
+    }
+
+    @Test("unreadable text yields no date rather than today's")
+    func garbageYieldsNil() {
+        #expect(BagScanner.parseDate("ROAST DATE") == nil)
+        #expect(BagScanner.parseDate("  ") == nil)
+        #expect(BagScanner.parseDate(nil) == nil)
+    }
+}
+
+@MainActor
+struct PreGroundDialInTests {
+    private func session(_ symptom: BrewSymptom?, grind: String = "12") -> BrewSessionSnapshot {
+        let brew = BrewSession(bean: OwnedBean(displayName: "Test"), potSizeCups: 3, grindSetting: grind)
+        brew.outcome = symptom.map { BrewOutcome(symptom: $0, note: nil) }
+        return BrewSessionSnapshot(brew)
+    }
+
+    @Test("a pre-ground bag never gets told to change the grind")
+    func extractionFaultsPivotAwayFromGrind() {
+        for symptom in [BrewSymptom.bitter, .burnt, .sour, .weak] {
+            let advice = BrewAdvisor.nextGrind(from: [session(symptom)], grindSize: .fine)
+            #expect(advice.direction == .constrained)
+            #expect(!advice.message.contains("coarser"))
+            #expect(!advice.message.contains("finer"))
+        }
+    }
+
+    @Test("the pivot names the variables that are left")
+    func constrainedAdviceNamesWhatIsStillOpen() {
+        let bitter = BrewAdvisor.advice(for: .bitter, grind: "n/a", grindSize: .fine)
+        #expect(bitter.message.contains("heat"))
+        #expect(bitter.message.contains("gurgle"))
+
+        let weak = BrewAdvisor.advice(for: .weak, grind: "n/a", grindSize: .fine)
+        #expect(weak.message.contains("basket"))
+    }
+
+    @Test("faults that were never about grind keep their own advice")
+    func bedAndHardwareFaultsAreUnaffected() {
+        #expect(BrewAdvisor.advice(for: .channeling, grind: "12", grindSize: .fine).direction == .hold)
+        #expect(BrewAdvisor.advice(for: .sputtering, grind: "12", grindSize: .fine).direction == .hold)
+        #expect(BrewAdvisor.advice(for: .balanced, grind: "12", grindSize: .fine).direction == .hold)
+    }
+
+    @Test("whole bean is unchanged, so the constraint only fires when it applies")
+    func wholeBeanKeepsTheGrindLever() {
+        #expect(BrewAdvisor.nextGrind(from: [session(.bitter)], grindSize: .wholeBean).direction == .coarser)
+        #expect(BrewAdvisor.constrainedAdvice(for: .bitter, grindSize: .wholeBean) != nil)
+    }
+
+    @Test("a pre-ground bag with no history says so instead of offering a starting grind")
+    func noHistoryOnAPreGroundBagStillAvoidsTheGrinder() {
+        let advice = BrewAdvisor.nextGrind(from: [], grindSize: .fine)
+        #expect(advice.direction == .constrained)
+        #expect(!advice.message.contains("table salt"))
+    }
+}
+
+struct BeanMatcherTests {
+    private let corpus = [
+        profile(id: "gayo", flavors: [.chocolate]),
+        profile(id: "toraja", flavors: [.earthy]),
+    ]
+
+    private func named(_ id: String, _ name: String, _ subregion: String, island: Island = .sumatra, score: Double? = nil) -> BeanProfile {
+        BeanProfile(
+            id: id, name: name, island: island, subregion: subregion,
+            altitudeMinMeters: nil, altitudeMaxMeters: nil, processingMethod: .washed,
+            variety: nil, flavorNotes: [.chocolate], acidity: .medium, body: .medium,
+            roastRecommendation: .medium, cuppingScore: score, dataSource: .coffeeReview
+        )
+    }
+
+    @Test("a shared origin word carries the link")
+    func sharedTermMatches() {
+        let corpus = [named("a", "Aceh Gayo", "Gayo Highlands"), named("b", "Toraja", "Sapan")]
+        let match = BeanMatcher.best(name: "Kopi Arabika Gayo", subregion: "", island: .sumatra, in: corpus)
+        #expect(match?.profile.id == "a")
+        #expect(match?.sharedTerms == ["gayo"])
+    }
+
+    @Test("island alone is not a match, because one island covers most of the corpus")
+    func islandAloneDoesNotLink() {
+        let corpus = [named("a", "Aceh Gayo", "Gayo Highlands")]
+        #expect(BeanMatcher.best(name: "Kopi Arabika", subregion: "", island: .sumatra, in: corpus) == nil)
+    }
+
+    @Test("words on every bag are ignored, so they cannot carry a match on their own")
+    func productWordsAreIgnored() {
+        #expect(BeanMatcher.terms(in: "Kopi Arabika Premium Gayo") == ["gayo"])
+    }
+
+    @Test("the island breaks a tie between two lots sharing the same word")
+    func islandBreaksTheTie() {
+        let corpus = [
+            named("java", "Ijen Estate", "Ijen", island: .java),
+            named("bali", "Ijen Blend", "Kintamani", island: .bali),
+        ]
+        let match = BeanMatcher.best(name: "Arabika Ijen", subregion: "", island: .java, in: corpus)
+        #expect(match?.profile.id == "java")
+    }
+
+    @Test("the same bag and corpus always produce the same link")
+    func matchingIsDeterministic() {
+        let corpus = [named("a", "Gayo One", "Gayo"), named("b", "Gayo Two", "Gayo")]
+        let first = BeanMatcher.best(name: "Gayo", subregion: "", island: nil, in: corpus)
+        let again = BeanMatcher.best(name: "Gayo", subregion: "", island: nil, in: corpus.reversed())
+        #expect(first?.profile.id == again?.profile.id)
+    }
+
+    @Test("a higher cupping score wins an otherwise equal match")
+    func scoreBreaksTheRemainingTie() {
+        let corpus = [named("low", "Gayo One", "Gayo", score: 81), named("high", "Gayo Two", "Gayo", score: 87)]
+        #expect(BeanMatcher.best(name: "Gayo", subregion: "", island: nil, in: corpus)?.profile.id == "high")
+    }
+}
+
+@MainActor
+struct QuickReplyTests {
+    private let bean = ThreadCard.bean(BeanCard(profile(id: "x")))
+
+    @Test("an offered question leads, ahead of anything the cards would have suggested")
+    func choicesLeadTheReplies() {
+        let cards: [ThreadCard] = [
+            bean,
+            .choices(ChoiceCard(question: "How should it feel?", options: ["Bright", "Smooth"])),
+        ]
+        let replies = QuickReplies.following(cards)
+        #expect(replies.prefix(2) == ["Bright", "Smooth"])
+        // The standing menu sits behind the answer, never in front of it.
+        #expect(!replies.prefix(2).contains { QuickReplies.opening.contains($0) })
+    }
+
+    @Test("the standing menu is always reachable by sliding, whatever the turn produced")
+    func openingIsAlwaysAppended() {
+        for cards in [[bean], [], [.choices(ChoiceCard(question: "q", options: ["a"]))]] {
+            let replies = QuickReplies.following(cards)
+            #expect(QuickReplies.opening.allSatisfy(replies.contains))
+        }
+    }
+
+    @Test("nothing is offered twice, so sliding does not repeat what is already on screen")
+    func noDuplicateReplies() {
+        #expect(Set(QuickReplies.following([bean])).count == QuickReplies.following([bean]).count)
+    }
+
+    @Test("an unreviewed brew is offered before anything else about the bag")
+    func awaitingReviewChangesTheOffer() {
+        #expect(QuickReplies.following([.owned(owned(awaiting: 2))]).first == "Review my brews")
+        #expect(QuickReplies.following([.owned(owned(awaiting: 0))].map { $0 }).first == "Start brewing")
+    }
+
+    @Test("a turn with no cards falls back to the opening set rather than nothing")
+    func emptyFallsBackToTheOpeningSet() {
+        #expect(QuickReplies.following([]) == QuickReplies.opening)
+    }
+
+    private func owned(awaiting: Int) -> OwnedCard {
+        let bean = OwnedBean(displayName: "Toraja")
+        for _ in 0..<awaiting {
+            let brew = BrewSession(bean: bean, potSizeCups: 3, grindSetting: "12")
+            bean.brewSessions.append(brew)
+        }
+        return OwnedCard(OwnedBeanSnapshot(bean), corpusLink: nil)
+    }
+}
+
+struct BagScanGrindTests {
+    @Test("an explicit grind word on the label makes the bag pre-ground")
+    func grindWordIsRead() {
+        let normalized = BagScanner.normalize("Ukuran giling: Halus\nBerat bersih 200 g")
+        #expect(BagScanner.deterministicFields(from: normalized).grindSize == .fine)
+    }
+
+    @Test("a label that says nothing about grind leaves the bag whole bean")
+    func silenceMeansWholeBean() {
+        #expect(BagScanner.deterministicFields(from: "Arabika Gayo\n200 g").grindSize == .wholeBean)
+    }
+
+    @Test("the printed grade is picked up as printed")
+    func gradeIsRead() {
+        #expect(BagScanner.deterministicFields(from: "Arabika Gayo\nGrade 1\n200 g").grade == "Grade 1")
+        #expect(BagScanner.deterministicFields(from: "Arabika Gayo\n200 g").grade == "")
+    }
+}
+
+struct SpecialtyRoutingTests {
+    @Test("every standing reply the app writes routes without asking the model")
+    func standingRepliesRouteLocally() {
+        for reply in QuickReplies.opening {
+            #expect(QuickReplies.specialty(for: reply) != nil || ContentViewIntents.handledInApp.contains(reply))
+        }
+    }
+
+    @Test("anything the app did not write goes to the router")
+    func freeTextIsNotGuessed() {
+        #expect(QuickReplies.specialty(for: "what is giling basah") == nil)
+        #expect(QuickReplies.specialty(for: "") == nil)
+    }
+
+    @Test("a specialist is told about its own tools and not about the others")
+    func briefingsDoNotLeak() {
+        #expect(Specialty.beans.instructions.contains("searchBeanCorpus"))
+        #expect(!Specialty.beans.instructions.contains("findNearbyCafes"))
+        #expect(Specialty.cupboard.instructions.contains("adviseNextGrind"))
+        #expect(!Specialty.cupboard.instructions.contains("matchTasteProfile"))
+        #expect(Specialty.shopping.instructions.contains("searchWeb"))
+        #expect(!Specialty.shopping.instructions.contains("adviseNextGrind"))
+    }
+
+    @Test("every specialist still carries the rules that are not about tools")
+    func coreSurvivesTheSplit() {
+        for specialty in Specialty.allCases {
+            #expect(specialty.instructions.contains("moka pot"))
+            #expect(specialty.instructions.contains("only do coffee"))
+        }
+    }
+
+    @Test("the generalist holds every tool, so unsure routing loses nothing")
+    func generalIsASupersetOfTheSpecialists() throws {
+        let agent = try CoffeeAgent()
+        let general = Set(agent.tools(for: .general).map(\.name))
+        for specialty in Specialty.allCases {
+            #expect(Set(agent.tools(for: specialty).map(\.name)).isSubset(of: general))
+        }
+        #expect(agent.tools(for: .general).count == 7)
+    }
+}
+
+/// The replies the app answers itself rather than sending anywhere.
+enum ContentViewIntents {
+    static let handledInApp: Set<String> = ["Scan a bag", "Start brewing", "Teach me something", "Another card", "Review my brews"]
+}
+
+struct LogPersistenceTests {
+    private func entry(_ message: String) -> LogEntry {
+        LogEntry(id: UUID(), date: Date(timeIntervalSince1970: 1_788_489_337.25), kind: .tool, message: message)
+    }
+
+    @Test("a line survives the round trip to the file and back")
+    func roundTrip() throws {
+        let written = LogStore.line(entry("searchBeanCorpus query=\"gayo\" limit=3"))
+        let read = try #require(LogStore.parse(Substring(written)))
+        #expect(read.kind == .tool)
+        #expect(read.message == "searchBeanCorpus query=\"gayo\" limit=3")
+        #expect(read.date.timeIntervalSince1970 == 1_788_489_337.25)
+    }
+
+    @Test("a tab inside the message stays in the message rather than shifting the columns")
+    func tabsInTheMessageSurvive() throws {
+        let read = try #require(LogStore.parse(Substring(LogStore.line(entry("a\tb\tc")))))
+        #expect(read.message == "a\tb\tc")
+    }
+
+    @Test("a newline is flattened, because one entry has to stay one line")
+    func newlinesAreFlattened() throws {
+        let written = LogStore.line(entry("first\nsecond"))
+        #expect(!written.contains("\n"))
+        #expect(try #require(LogStore.parse(Substring(written))).message == "first second")
+    }
+
+    @Test("a truncated or unparsable line is dropped rather than trapping")
+    func brokenLinesAreSkipped() {
+        #expect(LogStore.parse("nonsense") == nil)
+        #expect(LogStore.parse("1788489337.25\tNOTAKIND\tmessage") == nil)
+    }
+}

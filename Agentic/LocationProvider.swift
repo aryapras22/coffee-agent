@@ -19,6 +19,55 @@ protocol CoordinateProviding: Sendable {
     func currentCoordinate() async -> CoordinateResult
 }
 
+/// Where the user is, coarsely. Deliberately a place name and not a
+/// coordinate: this is the value that leaves the device, and a town and
+/// country are enough to bias a search without handing a third party the
+/// user's position.
+nonisolated struct CoarsePlace: Sendable, Equatable {
+    let locality: String?
+    let country: String?
+
+    var described: String? {
+        let parts = [locality, country].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+}
+
+/// Resolves a coordinate to a town and country, once. `CLGeocoder` is rate
+/// limited by the system, and the answer does not change between two searches
+/// in the same sitting, so the first result is kept for the session.
+actor PlaceResolver {
+    private let coordinates: CoordinateProviding
+    private var cached: CoarsePlace?
+    private var resolved = false
+
+    init(coordinates: CoordinateProviding) {
+        self.coordinates = coordinates
+    }
+
+    func currentPlace() async -> CoarsePlace? {
+        if resolved { return cached }
+
+        guard case .available(let coordinate) = await coordinates.currentCoordinate() else {
+            Log.write(.tool, "no location for search context")
+            // Not marked resolved: permission can be granted later, and a
+            // refusal now should not silence every search afterwards.
+            return nil
+        }
+
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        guard let mark = try? await CLGeocoder().reverseGeocodeLocation(location).first else {
+            Log.write(.failure, "reverse geocoding failed, searching without a place")
+            return nil
+        }
+
+        resolved = true
+        cached = CoarsePlace(locality: mark.locality, country: mark.country)
+        Log.write(.tool, "search context resolved to \(cached?.described ?? "nowhere")")
+        return cached
+    }
+}
+
 /// Bridges `CLLocationManager`'s delegate callbacks to async/await.
 /// `CLLocationManager` predates structured concurrency, so there is no
 /// awaitable equivalent of `requestLocation()` to call directly.

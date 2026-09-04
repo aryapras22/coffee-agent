@@ -59,6 +59,7 @@ final class ChatMessage {
     /// without touching the messages already stored.
     private var traceData: Data?
     private var placesData: Data?
+    private var cardsData: Data?
 
     init(role: ChatRole, content: String, timestamp: Date = .now) {
         self.id = UUID()
@@ -83,6 +84,14 @@ final class ChatMessage {
     var places: [MappedPlace] {
         get { Self.decode(placesData) }
         set { placesData = Self.encode(newValue) }
+    }
+
+    /// The result cards the run produced. Stored rather than rebuilt so
+    /// scrolling back shows the bean that was actually found, not whatever the
+    /// corpus would return for the same question today.
+    var cards: [ThreadCard] {
+        get { Self.decode(cardsData) }
+        set { cardsData = Self.encode(newValue) }
     }
 
     /// An empty list stores as nil, so a reply that used no tools costs no
