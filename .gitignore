@@ -21,3 +21,9 @@ xcuserdata/
 # Swift Package Manager. Package.resolved stays tracked so builds are reproducible.
 .build/
 .swiftpm/
+
+# Superseded code and tool scratch state, not part of the shipped app.
+Agentic/Legacy/
+.hallmark/
+.kiro/
+LEARNING/
